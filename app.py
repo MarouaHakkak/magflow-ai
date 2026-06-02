@@ -32,6 +32,7 @@ def get_gsheet():
         sheet = client.open_by_key(SHEET_ID).sheet1
         return sheet
     except Exception as e:
+        st.error(f"DEBUG GSHEET: {str(e)}")
         return None
 
 def load_history(tag_filter=None):
@@ -49,11 +50,13 @@ def load_history(tag_filter=None):
 def save_history(date, tag, intervention_type, task, result, technician, notes):
     sheet = get_gsheet()
     if sheet is None:
+        st.error("DEBUG: get_gsheet() returned None")
         return False
     try:
         sheet.append_row([date, tag, intervention_type, task, result, technician, notes])
         return True
-    except:
+    except Exception as e:
+        st.error(f"DEBUG ERROR: {str(e)}")
         return False
 
 def build_context():
