@@ -32,7 +32,6 @@ def get_gsheet():
         sheet = client.open_by_key(SHEET_ID).sheet1
         return sheet
     except Exception as e:
-        st.error(f"DEBUG GSHEET: {str(e)}")
         return None
 
 def load_history(tag_filter=None):
@@ -50,14 +49,33 @@ def load_history(tag_filter=None):
 def save_history(date, tag, intervention_type, task, result, technician, notes):
     sheet = get_gsheet()
     if sheet is None:
-        st.error("DEBUG: get_gsheet() returned None")
         return False
     try:
         sheet.append_row([date, tag, intervention_type, task, result, technician, notes])
         return True
-    except Exception as e:
-        st.error(f"DEBUG ERROR: {str(e)}")
+    except:
         return False
+
+def import_from_excel(uploaded_file):
+    """Read Historical Data sheet from uploaded Excel and save rows to Google Sheets."""
+    try:
+        wb = openpyxl.load_workbook(uploaded_file)
+        if "Historical Data" not in wb.sheetnames:
+            return 0, "Sheet 'Historical Data' not found in the uploaded file."
+        ws = wb["Historical Data"]
+        saved = 0
+        skipped = 0
+        for row in ws.iter_rows(min_row=4, values_only=True):
+            date, tag, itype, task, result, tech, notes = (row[0], row[1], row[2], row[3], row[4], row[5], row[6] if len(row) > 6 else "")
+            if not date or not tag or not task:
+                skipped += 1
+                continue
+            success = save_history(str(date), str(tag), str(itype or ""), str(task), str(result or ""), str(tech or ""), str(notes or ""))
+            if success:
+                saved += 1
+        return saved, None
+    except Exception as e:
+        return 0, str(e)
 
 def build_context():
     fluids = ", ".join(f['name'] for f in ai.data.fluids[:25]) + f"... ({len(ai.data.fluids)} total)"
@@ -397,6 +415,23 @@ with mt3:
     st.header("📋 Maintenance History")
     st.markdown("Log and track all maintenance interventions for each flowmeter across JESA/OCP projects.")
 
+    # ===== EXCEL IMPORT =====
+    with st.expander("📥 Import from Maintenance Excel (Historical Data sheet)", expanded=False):
+        st.markdown("Upload a MagFlow AI maintenance Excel file — all filled rows from the **Historical Data** sheet will be imported automatically.")
+        uploaded_excel = st.file_uploader("Upload Excel file", type=["xlsx"], key="excel_import")
+        if uploaded_excel:
+            if st.button("📤 Import to Database", type="primary"):
+                with st.spinner("Reading Excel and saving to database..."):
+                    count, error = import_from_excel(uploaded_excel)
+                if error:
+                    st.error(f"❌ Import failed: {error}")
+                elif count == 0:
+                    st.warning("⚠️ No valid rows found. Make sure rows start at line 4 and have Date, Tag and Task filled.")
+                else:
+                    st.success(f"✅ {count} intervention(s) imported successfully!")
+                    st.balloons()
+
+    st.divider()
     col_form, col_view = st.columns([1, 1])
 
     with col_form:
