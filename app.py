@@ -408,7 +408,7 @@ with st.sidebar:
 st.markdown("""<div style='text-align:center;padding:10px 0'><h1 style='color:#1B2A4A;margin:0'>🔧 MagFlow AI</h1><p style='font-size:16px;color:#555'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p><p style='font-size:12px;color:#999'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control</p><p style='font-size:11px;color:#bbb'>Developed by Maroua Hakkak — 2026</p></div>""", unsafe_allow_html=True)
 st.divider()
 
-mt1, mt2, mt3 = st.tabs(["🔧 Recommendation Engine", "📊 Dashboard", "📋 Maintenance History"])
+mt1, mt2, mt3, mt4 = st.tabs(["🔧 Recommendation Engine", "📊 Dashboard", "📋 Maintenance History", "📂 Project Import"])
 
 # ===== TAB 3: MAINTENANCE HISTORY =====
 with mt3:
@@ -719,3 +719,150 @@ with mt1:
                 st.markdown(tco.notes_response)
         st.divider()
         st.caption("Source: JESA Internal DB, JESA Flow App 2024, Vendor datasheets")
+
+# ===== PDF IMPORT FUNCTIONS =====
+def extract_datasheet_with_ai(pdf_bytes):
+    try:
+        import base64
+        client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+        prompt = """Extract ALL flowmeter instrument data from this JESA datasheet PDF.
+For each instrument found (each tag number), extract:
+- project, tag, service, fluid, dn (mm, number), flow_normal (m3/h, number), flow_max (m3/h, number)
+- temp_design (°C, number), pressure_design (bar-g, number), conductivity (string)
+- electrode, liner, tube, grounding, accuracy, vendor, model
+
+Return ONLY valid JSON array, no markdown:
+[{"project":"...","tag":"...","service":"...","fluid":"...","dn":400,"flow_normal":450,"flow_max":495,"temp_design":80,"pressure_design":24.5,"conductivity":">20 µS/cm","electrode":"Platinum","liner":"PFA","tube":"316L SS","grounding":"Grounding straps","accuracy":"±0.2%","vendor":"VTA","model":"VTA"}]"""
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001", max_tokens=2000,
+            messages=[{"role": "user", "content": [
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
+                {"type": "text", "text": prompt}
+            ]}])
+        text = response.content[0].text.strip().replace("```json","").replace("```","").strip()
+        return json.loads(text), None
+    except Exception as e:
+        return [], str(e)
+
+def save_project_to_gsheet(instruments, project_name):
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+        client_gs = gspread.authorize(creds)
+        spreadsheet = client_gs.open_by_key(SHEET_ID)
+        try:
+            ws = spreadsheet.worksheet("Project Data")
+        except:
+            ws = spreadsheet.add_worksheet(title="Project Data", rows=1000, cols=20)
+            ws.append_row(["Project","Tag","Service","Fluid","DN","Flow Normal (m3/h)","Flow Max (m3/h)",
+                           "Temp Design (°C)","Pressure Design (bar-g)","Conductivity","Electrode","Liner",
+                           "Tube","Grounding","Accuracy","Vendor","Model","Import Date"])
+        today = datetime.now().strftime('%Y-%m-%d')
+        saved = 0
+        for inst in instruments:
+            ws.append_row([inst.get('project', project_name), inst.get('tag',''), inst.get('service',''),
+                           inst.get('fluid',''), inst.get('dn',''), inst.get('flow_normal',''), inst.get('flow_max',''),
+                           inst.get('temp_design',''), inst.get('pressure_design',''), inst.get('conductivity',''),
+                           inst.get('electrode',''), inst.get('liner',''), inst.get('tube',''),
+                           inst.get('grounding',''), inst.get('accuracy',''), inst.get('vendor',''),
+                           inst.get('model',''), today])
+            saved += 1
+        return saved, None
+    except Exception as e:
+        return 0, str(e)
+
+def load_project_data_from_gsheet():
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+        client_gs = gspread.authorize(creds)
+        spreadsheet = client_gs.open_by_key(SHEET_ID)
+        ws = spreadsheet.worksheet("Project Data")
+        return ws.get_all_records()
+    except:
+        return []
+
+# ===== TAB 4: PROJECT IMPORT =====
+with mt4:
+    st.header("📂 Project Import — Datasheet Analyzer")
+    st.markdown("Upload a JESA flowmeter datasheet PDF. The AI will automatically extract all instrument data and save it to the shared database, enriching the **Validation vs JESA Projects** section.")
+
+    st.info("💡 Supported format: JESA Instrument Datasheet for Magnetic Flow Meter (PDF). Multiple instruments per PDF are supported.")
+
+    col_upload, col_results = st.columns([1, 1])
+
+    with col_upload:
+        st.subheader("📤 Upload Datasheet")
+        project_name_override = st.text_input("Project Name (optional override)", placeholder="e.g. Central Axis Program / SAFI Existing Site")
+        uploaded_pdf = st.file_uploader("Upload JESA Datasheet PDF", type=["pdf"], key="pdf_import")
+
+        if uploaded_pdf:
+            st.success(f"✅ File uploaded: **{uploaded_pdf.name}**")
+            if st.button("🤖 Extract & Save to Database", type="primary", use_container_width=True):
+                with st.spinner("AI is reading the datasheet and extracting instrument data..."):
+                    pdf_bytes = uploaded_pdf.read()
+                    instruments, error = extract_datasheet_with_ai(pdf_bytes)
+
+                if error:
+                    st.error(f"❌ Extraction failed: {error}")
+                elif not instruments:
+                    st.warning("⚠️ No instruments found in this PDF. Make sure it's a JESA flowmeter datasheet.")
+                else:
+                    st.session_state['extracted_instruments'] = instruments
+                    st.session_state['pdf_project_name'] = project_name_override or (instruments[0].get('project','') if instruments else '')
+                    st.success(f"✅ Found **{len(instruments)}** instrument(s). Review below before saving.")
+
+        if 'extracted_instruments' in st.session_state and st.session_state['extracted_instruments']:
+            instruments = st.session_state['extracted_instruments']
+            pname = st.session_state.get('pdf_project_name', '')
+            st.divider()
+            st.subheader("📋 Review Extracted Data")
+            for i, inst in enumerate(instruments):
+                with st.expander(f"🔧 {inst.get('tag','N/A')} — {inst.get('fluid','N/A')}", expanded=True):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown(f"**Project:** {inst.get('project', pname)}")
+                        st.markdown(f"**Tag:** {inst.get('tag','')}")
+                        st.markdown(f"**Service:** {inst.get('service','')}")
+                        st.markdown(f"**Fluid:** {inst.get('fluid','')}")
+                        st.markdown(f"**DN:** {inst.get('dn','')} mm")
+                        st.markdown(f"**Flow Normal:** {inst.get('flow_normal','')} m³/h")
+                        st.markdown(f"**Flow Max:** {inst.get('flow_max','')} m³/h")
+                        st.markdown(f"**Conductivity:** {inst.get('conductivity','')}")
+                    with c2:
+                        st.markdown(f"**Temp Design:** {inst.get('temp_design','')} °C")
+                        st.markdown(f"**Pressure Design:** {inst.get('pressure_design','')} bar-g")
+                        st.markdown(f"**Electrode:** {inst.get('electrode','')}")
+                        st.markdown(f"**Liner:** {inst.get('liner','')}")
+                        st.markdown(f"**Tube:** {inst.get('tube','')}")
+                        st.markdown(f"**Grounding:** {inst.get('grounding','')}")
+                        st.markdown(f"**Accuracy:** {inst.get('accuracy','')}")
+                        st.markdown(f"**Vendor/Model:** {inst.get('vendor','')} / {inst.get('model','')}")
+
+            st.divider()
+            if st.button("💾 Confirm & Save to Database", type="primary", use_container_width=True):
+                with st.spinner("Saving to Google Sheets..."):
+                    saved, err = save_project_to_gsheet(instruments, pname)
+                if err:
+                    st.error(f"❌ Save failed: {err}")
+                else:
+                    st.success(f"✅ {saved} instrument(s) saved to the shared database!")
+                    st.balloons()
+                    del st.session_state['extracted_instruments']
+
+    with col_results:
+        st.subheader("📊 Imported Projects Database")
+        with st.spinner("Loading..."):
+            project_records = load_project_data_from_gsheet()
+
+        if project_records:
+            st.caption(f"Total instruments imported: **{len(project_records)}**")
+            projects = list(set(r.get('Project','') for r in project_records if r.get('Project','')))
+            for proj in projects:
+                proj_instruments = [r for r in project_records if r.get('Project','') == proj]
+                with st.expander(f"📁 {proj} — {len(proj_instruments)} instrument(s)"):
+                    for r in proj_instruments:
+                        st.markdown(f"**{r.get('Tag','')}** | {r.get('Fluid','')} | DN{r.get('DN','')} | {r.get('Electrode','')} / {r.get('Liner','')} | _{r.get('Import Date','')}_")
+        else:
+            st.info("No projects imported yet. Upload a datasheet to get started.")
