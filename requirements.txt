@@ -3,3 +3,4 @@ openpyxl
 anthropic
 gspread
 google-auth
+PyGithub
