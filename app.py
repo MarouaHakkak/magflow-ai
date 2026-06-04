@@ -1,4 +1,4 @@
-"""MagFlow AI v8 — Project Import + Auto DB Update via GitHub"""
+"""MagFlow AI v7 — Body Material + Excel Maintenance (3 sheets) + Google Sheets History"""
 import streamlit as st
 import anthropic
 from datetime import datetime
@@ -10,11 +10,6 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 from magflow_ai import MagFlowAI, ProcessInput
-import base64
-from github import Github
-
-GITHUB_REPO = "MarouaHakkak/magflow-ai"
-EXCEL_FILE_PATH = "Data_Collection_v2.xlsx"
 
 st.set_page_config(page_title="MagFlow AI — JESA", page_icon="🔧", layout="wide")
 
@@ -413,7 +408,7 @@ with st.sidebar:
 st.markdown("""<div style='text-align:center;padding:10px 0'><h1 style='color:#1B2A4A;margin:0'>🔧 MagFlow AI</h1><p style='font-size:16px;color:#555'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p><p style='font-size:12px;color:#999'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control</p><p style='font-size:11px;color:#bbb'>Developed by Maroua Hakkak — 2026</p></div>""", unsafe_allow_html=True)
 st.divider()
 
-mt1, mt2, mt3, mt4 = st.tabs(["🔧 Recommendation Engine", "📊 Dashboard", "📋 Maintenance History", "📂 Project Import"])
+mt1, mt2, mt3 = st.tabs(["🔧 Recommendation Engine", "📊 Dashboard", "📋 Maintenance History"])
 
 # ===== TAB 3: MAINTENANCE HISTORY =====
 with mt3:
@@ -489,15 +484,30 @@ with mt3:
                 st.info(f"No history found for tag **{search_tag}**")
 
         st.divider()
-        st.subheader("📊 Recent Interventions (All)")
+        st.subheader("📊 All Interventions by Tag")
         with st.spinner("Loading..."):
             all_records = load_history()
         if all_records:
             st.caption(f"Total interventions recorded: **{len(all_records)}**")
-            recent = all_records[-10:][::-1]
-            for r in recent:
-                result_color = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
-                st.markdown(f"{result_color} **{r.get('Date','')}** | {r.get('Tag Number','')} | {r.get('Type','')} | {r.get('Technician','')}")
+            tags = {}
+            for r in all_records:
+                tag = r.get('Tag Number', 'Unknown')
+                if tag not in tags:
+                    tags[tag] = []
+                tags[tag].append(r)
+            for tag, records in sorted(tags.items()):
+                conform_count = sum(1 for r in records if r.get('Result') == 'Conform')
+                nonconform_count = sum(1 for r in records if r.get('Result') == 'Non-conform')
+                other_count = len(records) - conform_count - nonconform_count
+                summary = f"🟢 {conform_count}" if conform_count else ""
+                if nonconform_count: summary += f"  🔴 {nonconform_count}"
+                if other_count: summary += f"  🟡 {other_count}"
+                with st.expander(f"📁 **{tag}** — {len(records)} intervention(s)  {summary}"):
+                    for r in sorted(records, key=lambda x: x.get('Date',''), reverse=True):
+                        result_color = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
+                        st.markdown(f"{result_color} **{r.get('Date','')}** | {r.get('Type','')} | {r.get('Technician','')}")
+                        if r.get('Task'):
+                            st.caption(f"↳ {r.get('Task','')[:80]}{'...' if len(r.get('Task','')) > 80 else ''}")
         else:
             st.info("No interventions recorded yet.")
 
@@ -724,318 +734,3 @@ with mt1:
                 st.markdown(tco.notes_response)
         st.divider()
         st.caption("Source: JESA Internal DB, JESA Flow App 2024, Vendor datasheets")
-
-# ===== PROJECT IMPORT FUNCTIONS =====
-
-def get_excel_from_github():
-    """Download current Data_Collection_v2.xlsx from GitHub."""
-    try:
-        gh = Github(st.secrets["GITHUB_TOKEN"])
-        repo = gh.get_repo(GITHUB_REPO)
-        contents = repo.get_contents(EXCEL_FILE_PATH)
-        excel_bytes = base64.b64decode(contents.content)
-        wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
-        return wb, contents.sha, None
-    except Exception as e:
-        return None, None, str(e)
-
-def push_excel_to_github(wb, sha, commit_msg):
-    """Push updated Excel back to GitHub."""
-    try:
-        gh = Github(st.secrets["GITHUB_TOKEN"])
-        repo = gh.get_repo(GITHUB_REPO)
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        new_content = base64.b64encode(buf.read()).decode("utf-8")
-        repo.update_file(EXCEL_FILE_PATH, commit_msg, base64.b64decode(new_content), sha)
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-def get_existing_materials(wb):
-    """Extract existing electrodes, liners, fluids from the Excel."""
-    existing = {"electrodes": set(), "liners": set(), "fluids": set(), "fluid_electrodes": {}}
-    try:
-        if "Electrode Materials" in wb.sheetnames:
-            ws = wb["Electrode Materials"]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[0]: existing["electrodes"].add(str(row[0]).strip())
-        if "Liner Materials" in wb.sheetnames:
-            ws = wb["Liner Materials"]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[0]: existing["liners"].add(str(row[0]).strip())
-        if "Fluid-Material Matrix" in wb.sheetnames:
-            ws = wb["Fluid-Material Matrix"]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[0]:
-                    existing["fluids"].add(str(row[0]).strip())
-                    if row[1]: existing["fluid_electrodes"][str(row[0]).strip()] = str(row[1]).strip()
-    except:
-        pass
-    return existing
-
-def detect_new_materials(instruments, existing):
-    """Compare extracted instruments with existing database."""
-    new_findings = []
-    for inst in instruments:
-        electrode = inst.get('electrode', '').strip()
-        liner = inst.get('liner', '').strip()
-        fluid = inst.get('fluid', '').strip()
-        tag = inst.get('tag', '')
-
-        if electrode and electrode not in ('VTA', 'N/A', '') and electrode not in existing["electrodes"]:
-            new_findings.append({"type": "electrode", "value": electrode, "tag": tag, "fluid": fluid, "context": f"Found in {tag} for {fluid}"})
-
-        if liner and liner not in ('VTA', 'N/A', '') and liner not in existing["liners"]:
-            new_findings.append({"type": "liner", "value": liner, "tag": tag, "fluid": fluid, "context": f"Found in {tag} for {fluid}"})
-
-        if fluid and fluid not in ('VTA', 'N/A', '') and fluid not in existing["fluids"]:
-            new_findings.append({"type": "fluid", "value": fluid, "tag": tag, "electrode": electrode, "liner": liner, "context": f"New fluid in {tag}"})
-        elif fluid in existing["fluid_electrodes"] and electrode not in ('VTA', 'N/A', ''):
-            existing_elec = existing["fluid_electrodes"][fluid]
-            if electrode not in existing_elec:
-                new_findings.append({"type": "fluid_electrode_variant", "value": electrode, "tag": tag, "fluid": fluid, "context": f"New electrode variant for existing fluid {fluid} (current: {existing_elec})"})
-
-    return new_findings
-
-def apply_updates_to_excel(wb, approved_updates):
-    """Apply approved updates to the Excel workbook."""
-    changes = []
-    for update in approved_updates:
-        utype = update["type"]
-        value = update["value"]
-        try:
-            if utype == "electrode":
-                ws = wb["Electrode Materials"]
-                last_row = ws.max_row + 1
-                ws.cell(row=last_row, column=1, value=value)
-                ws.cell(row=last_row, column=2, value="Auto-imported")
-                ws.cell(row=last_row, column=3, value=datetime.now().strftime('%Y-%m-%d'))
-                changes.append(f"Added electrode: {value}")
-
-            elif utype == "liner":
-                ws = wb["Liner Materials"]
-                last_row = ws.max_row + 1
-                ws.cell(row=last_row, column=1, value=value)
-                ws.cell(row=last_row, column=2, value="Auto-imported")
-                ws.cell(row=last_row, column=3, value=datetime.now().strftime('%Y-%m-%d'))
-                changes.append(f"Added liner: {value}")
-
-            elif utype == "fluid":
-                ws = wb["Fluid-Material Matrix"]
-                last_row = ws.max_row + 1
-                ws.cell(row=last_row, column=1, value=value)
-                ws.cell(row=last_row, column=2, value=update.get("electrode", "VTA"))
-                ws.cell(row=last_row, column=3, value=update.get("liner", "VTA"))
-                changes.append(f"Added fluid: {value}")
-
-            elif utype == "fluid_electrode_variant":
-                ws = wb["Fluid-Material Matrix"]
-                for row in ws.iter_rows(min_row=2):
-                    if row[0].value and str(row[0].value).strip() == update["fluid"]:
-                        current = str(row[1].value or "")
-                        if value not in current:
-                            row[1].value = current + " / " + value if current else value
-                            changes.append(f"Added electrode variant {value} to fluid {update['fluid']}")
-                        break
-        except Exception as e:
-            changes.append(f"Error updating {utype} {value}: {str(e)}")
-
-    return wb, changes
-
-def extract_datasheet_with_ai(pdf_bytes):
-    try:
-        client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-        prompt = """Extract ALL flowmeter instrument data from this JESA datasheet PDF.
-For each instrument (each tag number), return JSON array:
-[{"project":"...","tag":"...","service":"...","fluid":"...","dn":400,"flow_normal":450,"flow_max":495,"temp_design":80,"pressure_design":24.5,"conductivity":">20 µS/cm","electrode":"Platinum","liner":"PFA","tube":"316L SS","grounding":"Grounding straps","accuracy":"±0.2%","vendor":"VTA","model":"VTA"}]
-Return ONLY valid JSON, no markdown, no explanation."""
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=2000,
-            messages=[{"role": "user", "content": [
-                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
-                {"type": "text", "text": prompt}
-            ]}])
-        text = response.content[0].text.strip().replace("```json","").replace("```","").strip()
-        return json.loads(text), None
-    except Exception as e:
-        return [], str(e)
-
-def save_project_to_gsheet(instruments, project_name):
-    try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-        client_gs = gspread.authorize(creds)
-        spreadsheet = client_gs.open_by_key(SHEET_ID)
-        try:
-            ws = spreadsheet.worksheet("Project Data")
-        except:
-            ws = spreadsheet.add_worksheet(title="Project Data", rows=1000, cols=20)
-            ws.append_row(["Project","Tag","Service","Fluid","DN","Flow Normal","Flow Max",
-                           "Temp Design","Pressure Design","Conductivity","Electrode","Liner",
-                           "Tube","Grounding","Accuracy","Vendor","Model","Import Date"])
-        today = datetime.now().strftime('%Y-%m-%d')
-        saved = 0
-        for inst in instruments:
-            ws.append_row([inst.get('project', project_name), inst.get('tag',''), inst.get('service',''),
-                           inst.get('fluid',''), inst.get('dn',''), inst.get('flow_normal',''), inst.get('flow_max',''),
-                           inst.get('temp_design',''), inst.get('pressure_design',''), inst.get('conductivity',''),
-                           inst.get('electrode',''), inst.get('liner',''), inst.get('tube',''),
-                           inst.get('grounding',''), inst.get('accuracy',''), inst.get('vendor',''),
-                           inst.get('model',''), today])
-            saved += 1
-        return saved, None
-    except Exception as e:
-        return 0, str(e)
-
-def load_project_data_from_gsheet():
-    try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-        client_gs = gspread.authorize(creds)
-        spreadsheet = client_gs.open_by_key(SHEET_ID)
-        ws = spreadsheet.worksheet("Project Data")
-        return ws.get_all_records()
-    except:
-        return []
-
-# ===== TAB 4: PROJECT IMPORT =====
-with mt4:
-    st.header("📂 Project Import — Datasheet Analyzer")
-    st.markdown("Upload a JESA flowmeter datasheet PDF. The AI extracts all instrument data, **detects new materials**, and updates the database automatically.")
-
-    col_upload, col_db = st.columns([1, 1])
-
-    with col_upload:
-        st.subheader("📤 Upload Datasheet PDF")
-        project_name_override = st.text_input("Project Name (optional)", placeholder="e.g. Central Axis Program / SAFI")
-        uploaded_pdf = st.file_uploader("Upload JESA Datasheet PDF", type=["pdf"], key="pdf_import")
-
-        if uploaded_pdf:
-            st.success(f"✅ **{uploaded_pdf.name}** ready")
-            if st.button("🤖 Analyze & Detect New Materials", type="primary", use_container_width=True):
-                with st.spinner("Step 1/3 — AI reading datasheet..."):
-                    pdf_bytes = uploaded_pdf.read()
-                    instruments, error = extract_datasheet_with_ai(pdf_bytes)
-
-                if error or not instruments:
-                    st.error(f"❌ Extraction failed: {error or 'No instruments found'}")
-                else:
-                    with st.spinner("Step 2/3 — Loading current database from GitHub..."):
-                        wb, sha, err = get_excel_from_github()
-
-                    if err:
-                        st.error(f"❌ Cannot load database: {err}")
-                    else:
-                        with st.spinner("Step 3/3 — Detecting new materials..."):
-                            existing = get_existing_materials(wb)
-                            new_findings = detect_new_materials(instruments, existing)
-
-                        st.session_state['import_instruments'] = instruments
-                        st.session_state['import_wb'] = wb
-                        st.session_state['import_sha'] = sha
-                        st.session_state['import_new'] = new_findings
-                        st.session_state['import_project'] = project_name_override or (instruments[0].get('project','') if instruments else '')
-                        st.success(f"✅ Found **{len(instruments)}** instrument(s) — **{len(new_findings)}** new material(s) detected")
-
-        # ===== REVIEW & APPROVE =====
-        if 'import_instruments' in st.session_state:
-            instruments = st.session_state['import_instruments']
-            new_findings = st.session_state['import_new']
-            pname = st.session_state['import_project']
-
-            st.divider()
-            st.subheader("📋 Extracted Instruments")
-            for inst in instruments:
-                with st.expander(f"🔧 {inst.get('tag','N/A')} — {inst.get('fluid','N/A')}"):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown(f"**Project:** {inst.get('project', pname)}")
-                        st.markdown(f"**Fluid:** {inst.get('fluid','')}")
-                        st.markdown(f"**DN:** {inst.get('dn','')} mm")
-                        st.markdown(f"**Flow:** {inst.get('flow_normal','')} → {inst.get('flow_max','')} m³/h")
-                        st.markdown(f"**Temp design:** {inst.get('temp_design','')} °C")
-                        st.markdown(f"**Pressure design:** {inst.get('pressure_design','')} bar-g")
-                    with c2:
-                        st.markdown(f"**Electrode:** {inst.get('electrode','')}")
-                        st.markdown(f"**Liner:** {inst.get('liner','')}")
-                        st.markdown(f"**Tube:** {inst.get('tube','')}")
-                        st.markdown(f"**Grounding:** {inst.get('grounding','')}")
-                        st.markdown(f"**Accuracy:** {inst.get('accuracy','')}")
-                        st.markdown(f"**Vendor/Model:** {inst.get('vendor','')} / {inst.get('model','')}")
-
-            # ===== NEW MATERIALS DETECTED =====
-            if new_findings:
-                st.divider()
-                st.subheader("🆕 New Materials Detected")
-                st.warning(f"**{len(new_findings)} new item(s)** not found in the current database. Select which ones to add:")
-
-                approved = []
-                for i, finding in enumerate(new_findings):
-                    ftype = finding['type']
-                    icons = {"electrode": "⚡", "liner": "🟡", "fluid": "💧", "fluid_electrode_variant": "🔀"}
-                    labels = {"electrode": "New Electrode", "liner": "New Liner", "fluid": "New Fluid", "fluid_electrode_variant": "New Electrode Variant"}
-                    icon = icons.get(ftype, "🆕")
-                    label = labels.get(ftype, "New")
-                    checked = st.checkbox(
-                        f"{icon} **{label}:** `{finding['value']}` — {finding['context']}",
-                        value=True, key=f"approve_{i}")
-                    if checked:
-                        approved.append(finding)
-
-                st.session_state['import_approved'] = approved
-            else:
-                st.info("✅ No new materials detected — all extracted data matches the existing database.")
-                st.session_state['import_approved'] = []
-
-            st.divider()
-            col_save1, col_save2 = st.columns(2)
-
-            with col_save1:
-                if st.button("💾 Save to Project Database", use_container_width=True):
-                    with st.spinner("Saving to Google Sheets..."):
-                        saved, err = save_project_to_gsheet(instruments, pname)
-                    if err:
-                        st.error(f"❌ {err}")
-                    else:
-                        st.success(f"✅ {saved} instrument(s) saved to Project Database")
-
-            with col_save2:
-                approved_updates = st.session_state.get('import_approved', [])
-                if approved_updates:
-                    if st.button(f"🔄 Apply {len(approved_updates)} update(s) to Database", type="primary", use_container_width=True):
-                        with st.spinner("Updating Data_Collection_v2.xlsx on GitHub..."):
-                            wb = st.session_state['import_wb']
-                            sha = st.session_state['import_sha']
-                            wb, changes = apply_updates_to_excel(wb, approved_updates)
-                            commit_msg = f"Auto-update: {len(approved_updates)} new material(s) from {pname or 'datasheet import'}"
-                            success, err = push_excel_to_github(wb, sha, commit_msg)
-                        if success:
-                            st.success(f"✅ Database updated on GitHub!")
-                            for c in changes:
-                                st.markdown(f"  • {c}")
-                            st.info("♻️ The app will reload with the new data in ~1 minute.")
-                            for key in ['import_instruments','import_wb','import_sha','import_new','import_approved']:
-                                if key in st.session_state: del st.session_state[key]
-                        else:
-                            st.error(f"❌ GitHub update failed: {err}")
-                else:
-                    st.button("✅ No updates to apply", disabled=True, use_container_width=True)
-
-    with col_db:
-        st.subheader("📊 Imported Projects Database")
-        with st.spinner("Loading..."):
-            project_records = load_project_data_from_gsheet()
-
-        if project_records:
-            st.caption(f"Total instruments imported: **{len(project_records)}**")
-            projects = list(set(r.get('Project','') for r in project_records if r.get('Project','')))
-            for proj in sorted(projects):
-                proj_insts = [r for r in project_records if r.get('Project','') == proj]
-                with st.expander(f"📁 {proj} — {len(proj_insts)} instrument(s)"):
-                    for r in proj_insts:
-                        st.markdown(f"**{r.get('Tag','')}** | {r.get('Fluid','')} | DN{r.get('DN','')} | ⚡{r.get('Electrode','')} / 🟡{r.get('Liner','')} | _{r.get('Import Date','')}_")
-        else:
-            st.info("No projects imported yet. Upload a datasheet to get started.")
