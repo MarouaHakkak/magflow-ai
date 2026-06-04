@@ -489,15 +489,30 @@ with mt3:
                 st.info(f"No history found for tag **{search_tag}**")
 
         st.divider()
-        st.subheader("📊 Recent Interventions (All)")
+        st.subheader("📊 All Interventions by Tag")
         with st.spinner("Loading..."):
             all_records = load_history()
         if all_records:
             st.caption(f"Total interventions recorded: **{len(all_records)}**")
-            recent = all_records[-10:][::-1]
-            for r in recent:
-                result_color = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
-                st.markdown(f"{result_color} **{r.get('Date','')}** | {r.get('Tag Number','')} | {r.get('Type','')} | {r.get('Technician','')}")
+            tags = {}
+            for r in all_records:
+                tag = r.get('Tag Number', 'Unknown')
+                if tag not in tags:
+                    tags[tag] = []
+                tags[tag].append(r)
+            for tag, records in sorted(tags.items()):
+                conform_count = sum(1 for r in records if r.get('Result') == 'Conform')
+                nonconform_count = sum(1 for r in records if r.get('Result') == 'Non-conform')
+                other_count = len(records) - conform_count - nonconform_count
+                summary = f"🟢 {conform_count}" if conform_count else ""
+                if nonconform_count: summary += f"  🔴 {nonconform_count}"
+                if other_count: summary += f"  🟡 {other_count}"
+                with st.expander(f"📁 **{tag}** — {len(records)} intervention(s)  {summary}"):
+                    for r in sorted(records, key=lambda x: x.get('Date',''), reverse=True):
+                        result_color = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
+                        st.markdown(f"{result_color} **{r.get('Date','')}** | {r.get('Type','')} | {r.get('Technician','')}")
+                        if r.get('Task'):
+                            st.caption(f"↳ {r.get('Task','')[:80]}{'...' if len(r.get('Task','')) > 80 else ''}")
         else:
             st.info("No interventions recorded yet.")
 
