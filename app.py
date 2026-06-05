@@ -176,7 +176,13 @@ Use null for missing numeric values. Return ONLY JSON, no markdown."""
 
 def get_excel_from_github():
     try:
-        gh = Github(st.secrets["GITHUB_TOKEN"])
+        token = st.secrets.get("GITHUB_TOKEN", None)
+        if token is None:
+            try: token = st.secrets["github"]["GITHUB_TOKEN"]
+            except: pass
+        if token is None:
+            raise Exception("GITHUB_TOKEN not found in secrets")
+        gh = Github(token)
         repo = gh.get_repo(GITHUB_REPO)
         contents = repo.get_contents(EXCEL_FILE_PATH)
         excel_bytes = base64.b64decode(contents.content)
@@ -187,7 +193,13 @@ def get_excel_from_github():
 
 def push_excel_to_github(wb, sha, commit_msg):
     try:
-        gh = Github(st.secrets["GITHUB_TOKEN"])
+        token = st.secrets.get("GITHUB_TOKEN", None)
+        if token is None:
+            try: token = st.secrets["github"]["GITHUB_TOKEN"]
+            except: pass
+        if token is None:
+            raise Exception("GITHUB_TOKEN not found in secrets")
+        gh = Github(token)
         repo = gh.get_repo(GITHUB_REPO)
         buf = io.BytesIO()
         wb.save(buf)
@@ -872,20 +884,12 @@ with mt4:
             with col_save2:
                 approved_updates = st.session_state.get('import_approved', [])
                 if approved_updates:
-                    if st.button(f"🔄 Apply {len(approved_updates)} update(s) to Database", type="primary", use_container_width=True):
-                        with st.spinner("Updating database on GitHub..."):
-                            wb = st.session_state['import_wb']
-                            sha = st.session_state['import_sha']
-                            wb, changes = apply_updates_to_excel(wb, approved_updates)
-                            success, err = push_excel_to_github(wb, sha, f"Auto-update: {len(approved_updates)} new material(s)")
-                        if success:
-                            st.success("✅ Database updated on GitHub!")
-                            for c in changes: st.markdown(f"  • {c}")
-                            st.info("♻️ App will reload with new data in ~1 minute.")
-                            for key in ['import_instruments','import_wb','import_sha','import_new','import_approved']:
-                                if key in st.session_state: del st.session_state[key]
-                        else: st.error(f"❌ GitHub update failed: {err}")
-                else: st.button("✅ No updates to apply", disabled=True, use_container_width=True)
+                    st.info(f"💡 **{len(approved_updates)} new material(s) detected**\n\nThese materials have been flagged for review. To integrate them into the database, an I&C engineer must complete their full specification (liner, o-ring, grounding, conductivity limits) in Data_Collection_v2.xlsx before adding them.")
+                    for finding in approved_updates:
+                        icons = {"electrode": "⚡", "liner": "🟡", "fluid": "💧", "fluid_electrode_variant": "🔀"}
+                        st.markdown(f"{icons.get(finding['type'],'🆕')} **{finding['value']}** — {finding['context']}")
+                else:
+                    st.success("✅ All materials already in database.")
     with col_db:
         st.subheader("📊 Imported Projects Database")
         with st.spinner("Loading..."):
