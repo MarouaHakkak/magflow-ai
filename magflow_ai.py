@@ -69,6 +69,33 @@ class DataLoader:
             if p and f and not any(k in p for k in ['LEGEND','NOTE','NOTES']):
                 projects.append({'project':p,'tag':self._s(row[1]),'fluid':f,'type':self._s(row[3]) if len(row)>3 else '','electrode':self._s(row[6]) if len(row)>6 else '','liner':self._s(row[7]) if len(row)>7 else '','grounding':self._s(row[8]) if len(row)>8 else '','tube':self._s(row[13]) if len(row)>13 else ''})
         return projects
+
+    def merge_gsheet_projects(self, gsheet_records):
+        """Merge Google Sheets Project Data records into project_data."""
+        existing_tags = {p.get('tag','') for p in self.project_data}
+        added = 0
+        for r in gsheet_records:
+            tag = str(r.get('Tag', '') or '').strip()
+            fluid = str(r.get('Fluid', '') or '').strip()
+            project = str(r.get('Project', '') or '').strip()
+            electrode = str(r.get('Electrode', '') or '').strip()
+            liner = str(r.get('Liner', '') or '').strip()
+            grounding = str(r.get('Grounding', '') or '').strip()
+            tube = str(r.get('Tube', '') or '').strip()
+            if tag and fluid and tag not in existing_tags:
+                self.project_data.append({
+                    'project': project,
+                    'tag': tag,
+                    'fluid': fluid,
+                    'type': 'Imported',
+                    'electrode': electrode,
+                    'liner': liner,
+                    'grounding': grounding,
+                    'tube': tube
+                })
+                existing_tags.add(tag)
+                added += 1
+        return added
     def get_asme_pressure(self, cls, temp):
         if cls not in self.asme: return None
         t = self.asme[cls]; temps = sorted(t.keys())
