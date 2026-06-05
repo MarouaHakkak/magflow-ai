@@ -124,31 +124,53 @@ def ask_claude(question, local_results, history=None):
         return f"Error: {str(e)}"
 
 def extract_datasheet_with_ai(pdf_bytes):
+    """Extract instruments page by page to avoid JSON truncation."""
     try:
+        from pypdf import PdfReader
+        import io as _io
+        from pypdf import PdfWriter
+        
         client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-        prompt = """Extract flowmeter instrument data from this JESA datasheet PDF.
-For EACH instrument tag found, return one JSON object. Return a JSON array.
-Include ONLY these fields: project, tag, service, fluid, dn (number), flow_normal (number), flow_max (number), temp_design (number), pressure_design (number), conductivity, electrode, liner, tube, grounding, accuracy, vendor, model.
-Use null for missing values. Return ONLY the JSON array, nothing else, no markdown."""
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": [
-                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
-                {"type": "text", "text": prompt}
-            ]}])
-        text = response.content[0].text.strip()
-        # Clean up any markdown
-        text = text.replace("```json","").replace("```","").strip()
-        # Find JSON array boundaries
-        start = text.find('[')
-        end = text.rfind(']')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text), None
-    except json.JSONDecodeError as e:
-        return [], f"JSON parsing error: {str(e)}. The AI response may have been truncated. Try with a smaller PDF."
+        
+        prompt = """This is ONE page from a JESA magnetic flowmeter datasheet.
+If this page contains an instrument specification (has a Tag Number and process data), extract it as JSON.
+If not (cover page, index, notes), return exactly: []
+Return ONLY a JSON array with one object per instrument found:
+[{"project":"...","tag":"...","service":"...","fluid":"...","dn":80,"flow_normal":23.0,"flow_max":26.0,"temp_design":105,"pressure_design":10.0,"conductivity":">5 uS/cm","electrode":"Tantalum","liner":"PFA","tube":"316L SS","grounding":"Grounding straps","accuracy":"0.2%","vendor":"VTA","model":"VTA"}]
+Use null for missing numeric values. Return ONLY JSON, no markdown."""
+
+        reader = PdfReader(_io.BytesIO(pdf_bytes))
+        all_instruments = []
+        
+        for page_num, page in enumerate(reader.pages):
+            try:
+                # Extract single page as PDF bytes
+                writer = PdfWriter()
+                writer.add_page(page)
+                page_buf = _io.BytesIO()
+                writer.write(page_buf)
+                page_buf.seek(0)
+                page_b64 = base64.standard_b64encode(page_buf.read()).decode("utf-8")
+                
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=1000,
+                    messages=[{"role": "user", "content": [
+                        {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": page_b64}},
+                        {"type": "text", "text": prompt}
+                    ]}])
+                
+                text = response.content[0].text.strip().replace("```json","").replace("```","").strip()
+                start = text.find('[')
+                end = text.rfind(']')
+                if start != -1 and end != -1:
+                    page_instruments = json.loads(text[start:end+1])
+                    all_instruments.extend(page_instruments)
+            except:
+                continue
+        
+        return all_instruments, None if all_instruments else ([], "No instruments found in any page of this PDF.")
+        
     except Exception as e:
         return [], str(e)
 
