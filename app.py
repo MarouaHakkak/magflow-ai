@@ -208,6 +208,28 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
             except gspread.WorksheetNotFound:
                 return spreadsheet.add_worksheet(title=title, rows=400, cols=cols), True
 
+        def _set_col_widths(ws, widths):
+            """widths: list of pixel widths for columns A, B, C..."""
+            reqs = []
+            for i, w in enumerate(widths):
+                reqs.append({
+                    "updateDimensionProperties": {
+                        "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                                  "startIndex": i, "endIndex": i + 1},
+                        "properties": {"pixelSize": w}, "fields": "pixelSize"}})
+            if reqs:
+                spreadsheet.batch_update({"requests": reqs})
+
+        def _style_header(ws, cell_range, bg=(0.106, 0.165, 0.290), fg=(1, 1, 1), bold=True):
+            ws.format(cell_range, {
+                "backgroundColor": {"red": bg[0], "green": bg[1], "blue": bg[2]},
+                "textFormat": {"bold": bold,
+                               "foregroundColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}},
+                "verticalAlignment": "MIDDLE"})
+
+        def _style_bold(ws, cell_range):
+            ws.format(cell_range, {"textFormat": {"bold": True}})
+
         # --- Historical Data tab (always) ---
         ws_h, created_h = _get_or_add(h_title, cols=8)
         if created_h:
@@ -223,6 +245,11 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
                 ws_h.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
                                  "Record created", "Maintenance record initialized by MagFlow AI",
                                  "—", "MagFlow AI", "Log every intervention here — survives for years."])
+            try:
+                _set_col_widths(ws_h, [110, 150, 150, 280, 110, 150, 240])
+                _style_header(ws_h, "A1:G1")  # dark header row (Date, Tag, ...)
+            except Exception:
+                pass
 
         # --- Guideline tab (only when full data provided) ---
         if mat is not None and tco is not None:
@@ -255,11 +282,21 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
                     ["", ""],
                     ["DRIFT RISK ASSESSMENT", ""],
                 ]
+                drift_header_row = len(rows)  # 1-indexed row of "DRIFT RISK ASSESSMENT"
                 for risk in tco.drift_risks:
                     rows.append([f"{risk.indicator} — {risk.level}", risk.description])
                     rows.append(["  Steps", " | ".join(risk.steps)])
                     rows.append(["  Frequency", risk.frequency])
-                ws_g.update(f"A1:B{len(rows)}", rows)
+                ws_g.update(values=rows, range_name=f"A1:B{len(rows)}")
+                try:
+                    _set_col_widths(ws_g, [200, 520])
+                    ws_g.format("A1:B1", {"textFormat": {"bold": True, "fontSize": 13}})
+                    _style_header(ws_g, "A4:B4")            # INSTRUMENT INFORMATION
+                    _style_header(ws_g, f"A{drift_header_row}:B{drift_header_row}")  # DRIFT RISK
+                    _style_bold(ws_g, "A5:A21")            # field labels column
+                    ws_g.format("A1:B400", {"wrapStrategy": "WRAP"})
+                except Exception:
+                    pass
 
         # --- Maintenance Checklist tab (only when full data provided) ---
         # Full month-by-month structure, faithful to the Excel (12 months,
@@ -346,7 +383,15 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
 
                 ncols = 11
                 last_col = get_column_letter(ncols)
-                ws_c.update(f"A1:{last_col}{len(rows)}", rows)
+                ws_c.update(values=rows, range_name=f"A1:{last_col}{len(rows)}")
+                try:
+                    # A=mark, B=task, C-I=days, J=status/date, K=technician
+                    _set_col_widths(ws_c, [40, 300, 55, 55, 55, 55, 55, 55, 55, 120, 150])
+                    ws_c.format("A1:K1", {"textFormat": {"bold": True, "fontSize": 13}})
+                    ws_c.format(f"A1:{last_col}{len(rows)}", {"wrapStrategy": "WRAP",
+                               "verticalAlignment": "MIDDLE"})
+                except Exception:
+                    pass
 
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={ws_h.id}"
         return url, None
