@@ -213,9 +213,16 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
         if created_h:
             ws_h.append_row(["Date", "Tag Number", "Type", "Task Performed",
                              "Result", "Technician", "Notes"])
-            ws_h.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
-                             "Record created", "Maintenance record initialized by MagFlow AI",
-                             "—", "MagFlow AI", "Log every intervention here — survives for years."])
+            # Pre-fill with any interventions already logged for this tag
+            existing = load_history(tag_filter=str(tag))
+            if existing:
+                for r in existing:
+                    ws_h.append_row([r.get('Date',''), r.get('Tag Number',''), r.get('Type',''),
+                                     r.get('Task',''), r.get('Result',''), r.get('Technician',''), r.get('Notes','')])
+            else:
+                ws_h.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
+                                 "Record created", "Maintenance record initialized by MagFlow AI",
+                                 "—", "MagFlow AI", "Log every intervention here — survives for years."])
 
         # --- Guideline tab (only when full data provided) ---
         if mat is not None and tco is not None:
@@ -255,34 +262,91 @@ def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
                 ws_g.update(f"A1:B{len(rows)}", rows)
 
         # --- Maintenance Checklist tab (only when full data provided) ---
+        # Full month-by-month structure, faithful to the Excel (12 months,
+        # weeks, Mon-Sun, monthly/quarterly/semi-annual/annual/multi-year/replacement)
         if tco is not None:
-            ws_c, created_c = _get_or_add(c_title, cols=4)
+            ws_c, created_c = _get_or_add(c_title, cols=12)
             if created_c:
                 mnt = tco.maintenance
-                rows = [
-                    ["Maintenance Checklist", str(tag)],
-                    [f"Fluid: {fluid or ''} | Category: {cat or ''} | Year: {datetime.now().year}", ""],
-                    ["", ""],
-                    ["Task", "Cadence", "Done? (✔)", "Technician / Date"],
+                year = datetime.now().year
+                days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+                months = ["January","February","March","April","May","June",
+                          "July","August","September","October","November","December"]
+                quarter_months = {3:"Q1",6:"Q2",9:"Q3",12:"Q4"}
+                semester_months = {6:"S1",12:"S2"}
+
+                def blank(n): return [""] * n
+                rows = []
+                # Header
+                rows.append([f"🔧 Maintenance Checklist — {tag}"] + blank(10))
+                rows.append([f"Fluid: {fluid or ''} | Category: {cat or ''} | Year: {year}"] + blank(10))
+                rows.append(blank(11))
+
+                for m_idx, month_name in enumerate(months, 1):
+                    rows.append([f"📅 {month_name} {year}"] + blank(10))
+                    # Continuous tasks -> 4 weeks with day columns
+                    if mnt.continuous:
+                        for w in range(1, 5):
+                            rows.append([f"   Week {w}", ""] + days + ["Status", "Technician"])
+                            for item in mnt.continuous:
+                                rows.append(["☐", item] + blank(7) + ["", ""])
+                            rows.append(blank(11))
+                    # Monthly
+                    if mnt.monthly:
+                        rows.append([f"   📋 Monthly tasks — {month_name}", ""] + blank(7) + ["Date", "Technician"])
+                        for item in mnt.monthly:
+                            rows.append(["☐", item] + blank(7) + ["", ""])
+                        rows.append(blank(11))
+                    # Quarterly
+                    if m_idx in quarter_months and mnt.quarterly:
+                        rows.append([f"   🔍 Quarterly — {quarter_months[m_idx]}", ""] + blank(7) + ["Date", "Technician"])
+                        for item in mnt.quarterly:
+                            rows.append(["☐", item] + blank(7) + ["", ""])
+                        rows.append(blank(11))
+                    # Semi-annual
+                    if m_idx in semester_months and mnt.semi_annual:
+                        rows.append([f"   ⚙️ Semi-annual — {semester_months[m_idx]}", ""] + blank(7) + ["Date", "Technician"])
+                        for item in mnt.semi_annual:
+                            rows.append(["☐", item] + blank(7) + ["", ""])
+                        rows.append(blank(11))
+
+                # Annual
+                if mnt.annual:
+                    rows.append([f"🛠️ ANNUAL MAINTENANCE — {year}"] + blank(10))
+                    for item in mnt.annual:
+                        rows.append(["☐", item] + blank(7) + ["Date", "Technician"])
+                    rows.append(blank(11))
+                # Multi-year
+                if mnt.multi_year:
+                    rows.append(["📊 MULTI-YEAR MAINTENANCE (3-5 years)"] + blank(10))
+                    for item in mnt.multi_year:
+                        rows.append(["☐", item] + blank(7) + ["Date", "Technician"])
+                    rows.append(blank(11))
+                # Replacement
+                if mnt.replacement:
+                    rows.append(["♻️ COMPONENT REPLACEMENT"] + blank(10))
+                    for item in mnt.replacement:
+                        rows.append(["☐", item] + blank(7) + ["Date", "Technician"])
+                    rows.append(blank(11))
+
+                # Instructions block at the bottom
+                rows.append(blank(11))
+                rows.append(["📌 HOW TO USE THIS CHECKLIST"] + blank(10))
+                instr = [
+                    ("☐ checkbox", "Replace with ✔ once the task is completed for that period."),
+                    ("Mon → Sun", "For continuous tasks, mark the day the check was done."),
+                    ("Status", "Write OK / Conform, or NC / Non-conform if a problem is found."),
+                    ("Technician", "Enter the full name of the person who did the task."),
+                    ("Date", "For monthly/quarterly/annual tasks, write the date (YYYY-MM-DD)."),
+                    ("If Non-conform", "Log it in the 'Historical Data' tab and open a corrective action."),
+                    ("To download", "File → Download → Microsoft Excel (.xlsx)."),
                 ]
-                blocks = [
-                    ("Continuous", mnt.continuous),
-                    ("Monthly", mnt.monthly),
-                    ("Quarterly", mnt.quarterly),
-                    ("Semi-annual", mnt.semi_annual),
-                    ("Annual", mnt.annual),
-                    ("Multi-year (3-5yr)", mnt.multi_year),
-                    ("Replacement", mnt.replacement),
-                ]
-                for cadence, items in blocks:
-                    for item in (items or []):
-                        rows.append([item, cadence, "", ""])
-                rows.append(["", "", "", ""])
-                rows.append(["HOW TO USE", "", "", ""])
-                rows.append(["Tick Done when a task is completed.", "", "", ""])
-                rows.append(["Write OK/Conform or NC/Non-conform + technician name & date.", "", "", ""])
-                rows.append(["If NC: log it in the Historical Data tab and open a corrective action.", "", "", ""])
-                ws_c.update(f"A1:D{len(rows)}", rows)
+                for k, v in instr:
+                    rows.append([k, v] + blank(9))
+
+                ncols = 11
+                last_col = get_column_letter(ncols)
+                ws_c.update(f"A1:{last_col}{len(rows)}", rows)
 
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={ws_h.id}"
         return url, None
@@ -1243,11 +1307,11 @@ with mt_reco:
                     f"color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px'>"
                     f"🔗 Open online maintenance record (new tab)</a>",
                     unsafe_allow_html=True)
-                st.caption("Permanent link — stored online in the MagFlow AI database with **3 tabs** "
-                           "(Guideline · Maintenance Checklist · Historical Data), just like the Excel. "
-                           "Bookmark it: it survives laptop loss and can be reopened to log interventions years "
-                           "later. To resume, search this tag in the **Maintenance History** tab. "
-                           "Prefer working offline? Download the Excel copy just below. ⬇️")
+                st.caption("Permanent link — stored online in the MagFlow AI database with the **same 3 sheets "
+                           "as the Excel** (Guideline · full month-by-month Maintenance Checklist · Historical Data). "
+                           "Bookmark it: it survives laptop loss and reopens to log interventions years later. "
+                           "**To download from the link:** in Google Sheets use File → Download → Microsoft Excel (.xlsx). "
+                           "To resume later, search this tag in the **Maintenance History** tab.")
             elif lerr:
                 st.warning(f"Couldn't create the online record link: {lerr}")
 
