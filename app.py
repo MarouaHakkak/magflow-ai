@@ -23,8 +23,8 @@ EXCEL_FILE_PATH = "Data_Collection_v2.xlsx"
 #   its own in a browser tab.)
 # ============================================================
 IMG_JESA_LOGO = "https://prod.cdn-medias.jeuneafrique.com/medias/2022/04/25/logo-jesa.png"
-IMG_HERO      = "REPLACE_URL_HERO"        # <-- paste the OCP/industrial hero image URL here
-IMG_MAG_SCHEMA = "REPLACE_URL_SCHEMA"     # <-- paste the labeled mag-flowmeter schematic URL here
+IMG_HERO      = "https://media.licdn.com/dms/image/v2/C561BAQEdzlQbQ6QRaQ/company-background_10000/company-background_10000/0/1583908059030?e=2147483647&v=beta&t=mn-3EDPCiDBT3qiDScVJVLzAlN_XvD2F3rDBL1YinXQ"
+IMG_FLOWMETER = "https://upload.wikimedia.org/wikipedia/commons/2/24/%D0%A0%D0%B0%D1%81%D1%85%D0%BE%D0%B4%D0%BE%D0%BC%D0%B5%D1%80_%D1%8D%D0%BB%D0%B5%D0%BA%D1%82%D1%80%D0%BE%D0%BC%D0%B0%D0%B3%D0%BD%D0%B8%D1%82%D0%BD%D1%8B%D0%B9.jpg"  # magnetic flowmeter photo (Wikimedia Commons)
 
 # Vendor website links (used in Layer 3 "Other Vendors" + main 3 cards)
 VENDOR_LINKS = {
@@ -57,14 +57,23 @@ st.set_page_config(page_title="MagFlow AI — JESA", page_icon="🔧", layout="w
 # ============================================================
 st.markdown("""
 <style>
-/* Tab bar: add spacing between tabs */
-.stTabs [data-baseweb="tab-list"] { gap: 28px; }
+/* Tab bar: bigger, clearer labels spread across the full page width (note 13) */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 14px;
+    display: flex;
+    width: 100%;
+}
 .stTabs [data-baseweb="tab"] {
-    padding: 10px 18px;
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: center;
+    padding: 14px 10px;
     background: #F2F6FC;
     border-radius: 10px 10px 0 0;
     font-weight: 600;
+    font-size: 17px;
 }
+.stTabs [data-baseweb="tab"] p { font-size: 17px !important; font-weight: 600 !important; }
 .stTabs [aria-selected="true"] {
     background: #E3F0FF;
     border-bottom: 3px solid #1565C0;
@@ -172,26 +181,110 @@ def _gs_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-def get_or_create_maintenance_sheet(tag):
+def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
+                                    vendor_e=None, vendor_eh=None, vendor_k=None, tco=None):
     """Return a permanent shareable URL for this tag's maintenance record.
-    Creates a dedicated worksheet (tab) inside the shared spreadsheet the
-    first time, then always returns the same link. Opens in a NEW browser
-    tab so MagFlow AI stays open."""
+    Builds a richer record mirroring the Excel: three tabs —
+    Guideline, Maintenance Checklist, Historical Data — inside the shared
+    spreadsheet. Always returns the same link. Opens in a NEW browser tab so
+    MagFlow AI stays open.
+
+    Called two ways:
+    - With full data (from the Recommendation Engine) -> builds all 3 tabs richly.
+    - With only `tag` (from Maintenance History search) -> ensures at least the
+      Historical Data tab exists, returns its link.
+    """
     try:
         client_gs = _gs_client()
         spreadsheet = client_gs.open_by_key(SHEET_ID)
-        # Worksheet titles can't exceed 100 chars or contain some symbols
-        ws_title = ("MNT_" + str(tag)).replace("/", "-").replace("\\", "-")[:95]
-        try:
-            ws = spreadsheet.worksheet(ws_title)
-        except gspread.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet(title=ws_title, rows=1000, cols=10)
-            ws.append_row(["Date", "Tag Number", "Type", "Task Performed",
-                           "Result", "Technician", "Notes"])
-            ws.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
-                           "Record created", "Maintenance record initialized by MagFlow AI",
-                           "—", "MagFlow AI", "Open this tab anytime to log interventions."])
-        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={ws.id}"
+        base = ("MNT_" + str(tag)).replace("/", "-").replace("\\", "-")[:80]
+        g_title = (base + "_Guide")[:95]
+        c_title = (base + "_Check")[:95]
+        h_title = (base + "_Hist")[:95]
+
+        def _get_or_add(title, cols=12):
+            try:
+                return spreadsheet.worksheet(title), False
+            except gspread.WorksheetNotFound:
+                return spreadsheet.add_worksheet(title=title, rows=400, cols=cols), True
+
+        # --- Historical Data tab (always) ---
+        ws_h, created_h = _get_or_add(h_title, cols=8)
+        if created_h:
+            ws_h.append_row(["Date", "Tag Number", "Type", "Task Performed",
+                             "Result", "Technician", "Notes"])
+            ws_h.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
+                             "Record created", "Maintenance record initialized by MagFlow AI",
+                             "—", "MagFlow AI", "Log every intervention here — survives for years."])
+
+        # --- Guideline tab (only when full data provided) ---
+        if mat is not None and tco is not None:
+            ws_g, created_g = _get_or_add(g_title, cols=2)
+            if created_g:
+                vn = vendor_e.model if vendor_e else (vendor_eh.model if vendor_eh else (vendor_k.model if vendor_k else 'N/A'))
+                vd = vendor_e.diagnostics if vendor_e else (vendor_eh.diagnostics if vendor_eh else (vendor_k.diagnostics if vendor_k else 'N/A'))
+                rows = [
+                    ["MagFlow AI — Instrument Guideline", ""],
+                    ["Generated", datetime.now().strftime('%Y-%m-%d')],
+                    ["", ""],
+                    ["INSTRUMENT INFORMATION", ""],
+                    ["Tag Number", str(tag)],
+                    ["Service Fluid", str(fluid or "")],
+                    ["Fluid Category", str(cat or "")],
+                    ["Electrode", f"{mat.electrode} (Cost: {mat.electrode_cost})"],
+                    ["Liner", f"{mat.liner} (Cost: {mat.liner_cost})"],
+                    ["Body Material", "SS 304L (coil housing)"],
+                    ["Tube Material", "SS 316L"],
+                    ["Grounding", mat.grounding],
+                    ["Penetrant Ring", mat.penetrant or "N/A"],
+                    ["O-Ring", mat.o_ring],
+                    ["Flange Coating", mat.flange_coat],
+                    ["Vendor Model", vn],
+                    ["Diagnostics", str(vd)[:120]],
+                    ["CAPEX Score", f"{tco.capex_score}/30"],
+                    ["Calibration", f"Every {tco.calib_months} months"],
+                    ["Liner Life", tco.liner_life],
+                    ["Electrode Life", tco.electrode_life],
+                    ["", ""],
+                    ["DRIFT RISK ASSESSMENT", ""],
+                ]
+                for risk in tco.drift_risks:
+                    rows.append([f"{risk.indicator} — {risk.level}", risk.description])
+                    rows.append(["  Steps", " | ".join(risk.steps)])
+                    rows.append(["  Frequency", risk.frequency])
+                ws_g.update(f"A1:B{len(rows)}", rows)
+
+        # --- Maintenance Checklist tab (only when full data provided) ---
+        if tco is not None:
+            ws_c, created_c = _get_or_add(c_title, cols=4)
+            if created_c:
+                mnt = tco.maintenance
+                rows = [
+                    ["Maintenance Checklist", str(tag)],
+                    [f"Fluid: {fluid or ''} | Category: {cat or ''} | Year: {datetime.now().year}", ""],
+                    ["", ""],
+                    ["Task", "Cadence", "Done? (✔)", "Technician / Date"],
+                ]
+                blocks = [
+                    ("Continuous", mnt.continuous),
+                    ("Monthly", mnt.monthly),
+                    ("Quarterly", mnt.quarterly),
+                    ("Semi-annual", mnt.semi_annual),
+                    ("Annual", mnt.annual),
+                    ("Multi-year (3-5yr)", mnt.multi_year),
+                    ("Replacement", mnt.replacement),
+                ]
+                for cadence, items in blocks:
+                    for item in (items or []):
+                        rows.append([item, cadence, "", ""])
+                rows.append(["", "", "", ""])
+                rows.append(["HOW TO USE", "", "", ""])
+                rows.append(["Tick Done when a task is completed.", "", "", ""])
+                rows.append(["Write OK/Conform or NC/Non-conform + technician name & date.", "", "", ""])
+                rows.append(["If NC: log it in the Historical Data tab and open a corrective action.", "", "", ""])
+                ws_c.update(f"A1:D{len(rows)}", rows)
+
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={ws_h.id}"
         return url, None
     except Exception as e:
         return None, str(e)
@@ -501,6 +594,48 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
     ws2.column_dimensions['J'].width = 15; ws2.column_dimensions['K'].width = 20
     ws2.merge_cells('A1:K1'); ws2['A1'] = f"🔧 Maintenance Checklist — {tag}"; ws2['A1'].font = title_font
     ws2['A2'] = f"Fluid: {fluid} | Category: {cat} | Year: {year}"; ws2['A2'].font = Font(italic=True, color="666666")
+
+    # ---- Instructions table on the right side (cols O+) — note 17 ----
+    ws2.column_dimensions['O'].width = 22
+    ws2.column_dimensions['P'].width = 50
+    instr_title_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
+    instr_hdr_fill = PatternFill(start_color="BBDEFB", end_color="BBDEFB", fill_type="solid")
+    ws2.merge_cells('O2:P2')
+    ws2['O2'] = "📌 How to Use This Checklist"; ws2['O2'].font = Font(bold=True, size=13, color="FFFFFF")
+    ws2['O2'].fill = instr_title_fill; ws2['O2'].alignment = center
+    irow = 4
+    instr_rows = [
+        ("Column / Symbol", "What to do", True),
+        ("☐ checkbox", "Tick (✔) once the task is completed for that period.", False),
+        ("Mon → Sun", "For continuous tasks, mark the day the check was done.", False),
+        ("Status", "Write: OK / Conform, or NC / Non-conform if a problem is found.", False),
+        ("Technician", "Enter the full name of the person who did the task.", False),
+        ("Date", "For monthly/quarterly/annual tasks, write the date done (YYYY-MM-DD).", False),
+        ("Notes", "Add any observation, anomaly, or action taken.", False),
+        ("", "", False),
+        ("Cadence", "Filling frequency", True),
+        ("Continuous", "Checked every week (transmitter self-test, empty-pipe detection).", False),
+        ("Monthly", "Once per month (HART/diagnostic alarms, display check).", False),
+        ("Quarterly (Q1–Q4)", "Every 3 months (calibration verification, grounding).", False),
+        ("Semi-annual (S1–S2)", "Every 6 months (liner/electrode inspection).", False),
+        ("Annual / Multi-year", "Once a year or every 3–5 years (full calibration, replacement).", False),
+        ("", "", False),
+        ("If Non-conform (NC)", "Log it in the 'Historical Data' sheet and open a corrective action.", True),
+    ]
+    for label, desc, is_header in instr_rows:
+        if label == "" and desc == "":
+            irow += 1; continue
+        cl = ws2.cell(row=irow, column=15, value=label)  # col O
+        cd = ws2.cell(row=irow, column=16, value=desc)    # col P
+        cd.alignment = wrap
+        if is_header:
+            cl.font = Font(bold=True, size=10, color="0D47A1"); cl.fill = instr_hdr_fill
+            cd.font = Font(bold=True, size=10, color="0D47A1"); cd.fill = instr_hdr_fill
+        else:
+            cl.font = Font(bold=True, size=10); cd.font = Font(size=10)
+        cl.border = thin; cd.border = thin
+        irow += 1
+
     row = 4
     months_data = [("January",4),("February",4),("March",4),("April",4),("May",4),("June",4),
                    ("July",4),("August",4),("September",4),("October",4),("November",4),("December",4)]
@@ -671,21 +806,25 @@ def render_landing():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # How a mag flowmeter works (schematic — minimal text)
-    st.markdown("<h3 style='color:#1565C0'>How a magnetic flowmeter works</h3>", unsafe_allow_html=True)
-    sc1, sc2 = st.columns([3, 2])
-    with sc1:
-        if IMG_MAG_SCHEMA and not IMG_MAG_SCHEMA.startswith("REPLACE_"):
-            st.image(IMG_MAG_SCHEMA, use_container_width=True,
-                     caption="Faraday's law of induction — V = B × L × v")
+    # Magnetic flowmeter — photo + description
+    st.markdown("<h3 style='color:#1565C0'>The magnetic flowmeter</h3>", unsafe_allow_html=True)
+    pc1, pc2 = st.columns([2, 3])
+    with pc1:
+        if IMG_FLOWMETER and not IMG_FLOWMETER.startswith("REPLACE_"):
+            st.image(IMG_FLOWMETER, use_container_width=True, caption="Electromagnetic flowmeter")
         else:
-            st.info("🖼️ Mag-flowmeter schematic goes here — set `IMG_MAG_SCHEMA` at the top of app.py.")
-    with sc2:
+            st.info("🖼️ Flowmeter photo goes here — set `IMG_FLOWMETER` at the top of app.py.")
+    with pc2:
         st.markdown(
             "<div class='mf-card'>"
-            "<p style='font-size:15px;color:#444;margin:0'>A conductive fluid moving through a magnetic field "
-            "generates a voltage proportional to its velocity (<b>V = B × L × v</b>). Electrodes pick it up; "
-            "the liner insulates the tube. MagFlow AI selects every component this depends on.</p></div>",
+            "<p style='font-size:17px;font-weight:700;color:#1B2A4A;margin:0 0 8px 0'>Magnetic Flowmeter</p>"
+            "<p style='font-size:15px;color:#444;line-height:1.6;margin:0'>"
+            "A magnetic (electromagnetic) flowmeter measures the flow of conductive liquids using "
+            "Faraday's law of induction. As the fluid passes through a magnetic field, it generates a "
+            "voltage proportional to its velocity, picked up by two electrodes in the tube wall. "
+            "With no moving parts and no obstruction in the flow path, it produces no pressure drop and "
+            "needs little maintenance — making it ideal for water, slurries, acids, and abrasive fluids "
+            "common in OCP/JESA process lines.</p></div>",
             unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -777,8 +916,22 @@ with st.sidebar:
 
 # ============================================================
 #  APP HEADER + TABS  (Dashboard moved to LAST)
+#  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
-st.markdown("""<div style='text-align:center;padding:10px 0'><h1 style='color:#1B2A4A;margin:0'>🔧 MagFlow AI</h1><p style='font-size:16px;color:#555'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p><p style='font-size:12px;color:#999'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control</p><p style='font-size:11px;color:#bbb'>Developed by Maroua Hakkak — 2026</p></div>""", unsafe_allow_html=True)
+hc1, hc2 = st.columns([1, 6])
+with hc1:
+    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+        st.image(IMG_JESA_LOGO, width=120)
+with hc2:
+    st.markdown("<h1 style='color:#1B2A4A;margin:0 0 4px 0'>🔧 MagFlow AI</h1>", unsafe_allow_html=True)
+    if st.button("🏠 Back to Home", key="title_home"):
+        st.session_state.page = "home"
+        st.rerun()
+    st.markdown(
+        "<p style='font-size:15px;color:#555;margin:6px 0 0 0'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
+        "<p style='font-size:12px;color:#999;margin:0'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control · "
+        "Developed by Maroua Hakkak — 2026</p>",
+        unsafe_allow_html=True)
 st.divider()
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
@@ -915,7 +1068,7 @@ with mt_reco:
         with c2:
             cat = ai.get_fluid_category(fluid)
             colors = {'Corrosive':'🔴','Abrasive':'🟠','Charged':'🟡','Clean':'🟢','Unknown':'⚪'}
-            st.markdown(f"### Fluid Category: {colors.get(cat,'')} **{cat}**")
+            st.markdown(f"<p style='font-size:17px;font-weight:600;color:#1B2A4A;margin-bottom:4px'>Fluid Category: {colors.get(cat,'')} {cat}</p>", unsafe_allow_html=True)
             conductivity = st.number_input("Conductivity (µS/cm)", value=5000.0, min_value=0.0, step=100.0)
     with tab2:
         c1,c2,c3 = st.columns(3)
@@ -1080,16 +1233,21 @@ with mt_reco:
 
             # ---- Persistent online maintenance record (opens in NEW tab) ----
             st.markdown("<p style='font-size:18px;font-weight:bold'>🔗 Online Maintenance Record</p>", unsafe_allow_html=True)
-            link, lerr = get_or_create_maintenance_sheet(tag)
+            link, lerr = get_or_create_maintenance_sheet(
+                tag, fluid=fluid, cat=cat, mat=m,
+                vendor_e=vendors['emerson'], vendor_eh=vendors['eh'], vendor_k=vendors['krohne'],
+                tco=tco)
             if link:
                 st.markdown(
                     f"<a href='{link}' target='_blank' style='display:inline-block;background:#1565C0;"
                     f"color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px'>"
                     f"🔗 Open online maintenance record (new tab)</a>",
                     unsafe_allow_html=True)
-                st.caption("Permanent link — stored online in the MagFlow AI database. Bookmark it: it survives "
-                           "laptop loss and can be reopened to log interventions years later. To resume later, "
-                           "search this tag in the **Maintenance History** tab.")
+                st.caption("Permanent link — stored online in the MagFlow AI database with **3 tabs** "
+                           "(Guideline · Maintenance Checklist · Historical Data), just like the Excel. "
+                           "Bookmark it: it survives laptop loss and can be reopened to log interventions years "
+                           "later. To resume, search this tag in the **Maintenance History** tab. "
+                           "Prefer working offline? Download the Excel copy just below. ⬇️")
             elif lerr:
                 st.warning(f"Couldn't create the online record link: {lerr}")
 
