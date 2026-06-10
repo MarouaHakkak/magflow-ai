@@ -1,4 +1,4 @@
-"""MagFlow AI v8 — Project Import + Auto DB Update via GitHub"""
+"""MagFlow AI v9 — Landing page, colorful UI, persistent maintenance links, state-safe"""
 import streamlit as st
 import anthropic
 from datetime import datetime
@@ -16,7 +16,91 @@ from github import Github
 GITHUB_REPO = "MarouaHakkak/magflow-ai"
 EXCEL_FILE_PATH = "Data_Collection_v2.xlsx"
 
+# ============================================================
+#  IMAGE URLS  —  REPLACE THE PLACEHOLDERS BELOW
+#  (See the chat for step-by-step instructions on getting a
+#   direct image URL. It must end in .png / .jpg and load on
+#   its own in a browser tab.)
+# ============================================================
+IMG_JESA_LOGO = "https://prod.cdn-medias.jeuneafrique.com/medias/2022/04/25/logo-jesa.png"
+IMG_HERO      = "REPLACE_URL_HERO"        # <-- paste the OCP/industrial hero image URL here
+IMG_MAG_SCHEMA = "REPLACE_URL_SCHEMA"     # <-- paste the labeled mag-flowmeter schematic URL here
+
+# Vendor website links (used in Layer 3 "Other Vendors" + main 3 cards)
+VENDOR_LINKS = {
+    "Emerson":          "https://www.emerson.com/en-us/automation/measurement-instrumentation/flow-measurement/magnetic-flow-meters",
+    "Endress+Hauser":   "https://www.endress.com/en/field-instruments-overview/flow-measurement-product-overview/electromagnetic-flowmeter",
+    "Endress Hauser":   "https://www.endress.com/en/field-instruments-overview/flow-measurement-product-overview/electromagnetic-flowmeter",
+    "Krohne":           "https://krohne.com/en/products/flow-measurement/flowmeters/electromagnetic-flowmeters",
+    "ABB":              "https://new.abb.com/products/measurement-products/flow/electromagnetic-flowmeters",
+    "Siemens":          "https://www.siemens.com/global/en/products/automation/process-instrumentation/flow-measurement/electromagnetic.html",
+    "Yokogawa":         "https://www.yokogawa.com/solutions/products-and-services/measurement/flow-meters/magnetic-flow-meters/",
+    "Honeywell":        "https://process.honeywell.com/us/en/products/field-instruments/flow-measurement",
+    "VEGA":             "https://www.vega.com/en-us/products/product-catalog/flow",
+}
+
+def vendor_url(name):
+    if not name:
+        return None
+    key = name.strip()
+    if key in VENDOR_LINKS:
+        return VENDOR_LINKS[key]
+    for k, v in VENDOR_LINKS.items():
+        if k.lower() in key.lower() or key.lower() in k.lower():
+            return v
+    return None
+
 st.set_page_config(page_title="MagFlow AI — JESA", page_icon="🔧", layout="wide")
+
+# ============================================================
+#  GLOBAL STYLING  —  colorful theme + spaced tabs
+# ============================================================
+st.markdown("""
+<style>
+/* Tab bar: add spacing between tabs */
+.stTabs [data-baseweb="tab-list"] { gap: 28px; }
+.stTabs [data-baseweb="tab"] {
+    padding: 10px 18px;
+    background: #F2F6FC;
+    border-radius: 10px 10px 0 0;
+    font-weight: 600;
+}
+.stTabs [aria-selected="true"] {
+    background: #E3F0FF;
+    border-bottom: 3px solid #1565C0;
+}
+/* Soft page background */
+.stApp { background: linear-gradient(180deg, #FBFCFF 0%, #F4F8FD 100%); }
+/* Buttons */
+.stButton button, .stDownloadButton button {
+    border-radius: 8px;
+    font-weight: 600;
+}
+/* Landing hero card */
+.mf-hero {
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(21,42,74,0.18);
+    margin-bottom: 8px;
+}
+.mf-card {
+    background: #FFFFFF;
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: 0 3px 14px rgba(21,42,74,0.08);
+    height: 100%;
+}
+.mf-step {
+    background: #FFFFFF;
+    border-left: 5px solid #1565C0;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 10px rgba(21,42,74,0.06);
+}
+.mf-step b { color: #1565C0; }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def load_model():
@@ -78,6 +162,40 @@ def import_from_excel(uploaded_file):
     except Exception as e:
         return 0, str(e)
 
+# ============================================================
+#  PERSISTENT MAINTENANCE LINK  (one Google Sheet tab per tag)
+#  Stores a shareable URL in the app so the record survives for
+#  years and can be reopened from any machine.
+# ============================================================
+def _gs_client():
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    return gspread.authorize(creds)
+
+def get_or_create_maintenance_sheet(tag):
+    """Return a permanent shareable URL for this tag's maintenance record.
+    Creates a dedicated worksheet (tab) inside the shared spreadsheet the
+    first time, then always returns the same link. Opens in a NEW browser
+    tab so MagFlow AI stays open."""
+    try:
+        client_gs = _gs_client()
+        spreadsheet = client_gs.open_by_key(SHEET_ID)
+        # Worksheet titles can't exceed 100 chars or contain some symbols
+        ws_title = ("MNT_" + str(tag)).replace("/", "-").replace("\\", "-")[:95]
+        try:
+            ws = spreadsheet.worksheet(ws_title)
+        except gspread.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet(title=ws_title, rows=1000, cols=10)
+            ws.append_row(["Date", "Tag Number", "Type", "Task Performed",
+                           "Result", "Technician", "Notes"])
+            ws.append_row([datetime.now().strftime('%Y-%m-%d'), str(tag),
+                           "Record created", "Maintenance record initialized by MagFlow AI",
+                           "—", "MagFlow AI", "Open this tab anytime to log interventions."])
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={ws.id}"
+        return url, None
+    except Exception as e:
+        return None, str(e)
+
 def build_context():
     fluids = ", ".join(f['name'] for f in ai.data.fluids[:25]) + f"... ({len(ai.data.fluids)} total)"
     return f"""You are MagFlow AI Assistant for JESA/OCP electromagnetic flowmeters.
@@ -129,9 +247,9 @@ def extract_datasheet_with_ai(pdf_bytes):
         from pypdf import PdfReader
         import io as _io
         from pypdf import PdfWriter
-        
+
         client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        
+
         prompt = """This is ONE page from a JESA magnetic flowmeter datasheet.
 If this page contains an instrument specification (has a Tag Number and process data), extract it as JSON.
 If not (cover page, index, notes), return exactly: []
@@ -141,17 +259,16 @@ Use null for missing numeric values. Return ONLY JSON, no markdown."""
 
         reader = PdfReader(_io.BytesIO(pdf_bytes))
         all_instruments = []
-        
+
         for page_num, page in enumerate(reader.pages):
             try:
-                # Extract single page as PDF bytes
                 writer = PdfWriter()
                 writer.add_page(page)
                 page_buf = _io.BytesIO()
                 writer.write(page_buf)
                 page_buf.seek(0)
                 page_b64 = base64.standard_b64encode(page_buf.read()).decode("utf-8")
-                
+
                 response = client.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=1000,
@@ -159,7 +276,7 @@ Use null for missing numeric values. Return ONLY JSON, no markdown."""
                         {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": page_b64}},
                         {"type": "text", "text": prompt}
                     ]}])
-                
+
                 text = response.content[0].text.strip().replace("```json","").replace("```","").strip()
                 start = text.find('[')
                 end = text.rfind(']')
@@ -168,9 +285,9 @@ Use null for missing numeric values. Return ONLY JSON, no markdown."""
                     all_instruments.extend(page_instruments)
             except:
                 continue
-        
+
         return all_instruments, None if all_instruments else ([], "No instruments found in any page of this PDF.")
-        
+
     except Exception as e:
         return [], str(e)
 
@@ -485,8 +602,127 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf
 
-# ===== SIDEBAR =====
+# ============================================================
+#  PAGE ROUTER  —  landing page is NOT a tab; it's shown first
+# ============================================================
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+
+# ------------------------------------------------------------
+#  LANDING PAGE
+# ------------------------------------------------------------
+def render_landing():
+    # Top bar: JESA logo + title
+    lc1, lc2 = st.columns([1, 4])
+    with lc1:
+        if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+            st.image(IMG_JESA_LOGO, width=160)
+    with lc2:
+        st.markdown(
+            "<h1 style='color:#1B2A4A;margin-bottom:0'>🔧 MagFlow AI</h1>"
+            "<p style='font-size:18px;color:#1565C0;margin-top:2px;font-weight:600'>"
+            "AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
+            "<p style='font-size:13px;color:#888;margin-top:0'>PFE ENSA — JESA (OCP × Worley) · "
+            "Instrumentation & Control · Developed by Maroua Hakkak — 2026</p>",
+            unsafe_allow_html=True)
+
+    # Hero image
+    if IMG_HERO and not IMG_HERO.startswith("REPLACE_"):
+        st.markdown(f"<div class='mf-hero'><img src='{IMG_HERO}' style='width:100%;display:block'></div>",
+                    unsafe_allow_html=True)
+    else:
+        st.info("🖼️ Hero image goes here — set `IMG_HERO` at the top of app.py (see chat for how to get the URL).")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Enter button (top, easy to find)
+    ec1, ec2, ec3 = st.columns([1, 2, 1])
+    with ec2:
+        if st.button("🚀 Enter MagFlow AI", type="primary", use_container_width=True):
+            st.session_state.page = "app"
+            st.rerun()
+
+    st.divider()
+
+    # What it is / what it does
+    st.markdown("<h2 style='color:#1B2A4A'>What is MagFlow AI?</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='font-size:16px;color:#444'>MagFlow AI is an AI-based predictive-maintenance assistant "
+        "<b>developed and validated on electromagnetic flowmeters, with a generic and extensible architecture</b>. "
+        "It turns a flowmeter's process conditions into a complete engineering recommendation: the right materials, "
+        "compatible vendor models, total cost of ownership, drift risk, and a year-round maintenance plan — "
+        "grounded in a database of real JESA/OCP projects.</p>",
+        unsafe_allow_html=True)
+
+    st.markdown("<h3 style='color:#1565C0'>What it does</h3>", unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
+    for col, (icon, title, body, color) in zip(
+        [f1, f2, f3, f4],
+        [("✅", "Validation", "Checks if a magnetic flowmeter suits your fluid, velocity and conductivity.", "#2E7D32"),
+         ("🧪", "Materials", "Selects electrode, liner, grounding, O-ring and coating for the fluid.", "#1565C0"),
+         ("🏭", "Vendors", "Matches compatible models from Emerson, Endress+Hauser, Krohne & others.", "#E65100"),
+         ("📊", "TCO & Drift", "Estimates cost of ownership, drift risk and a full maintenance plan.", "#6A1B9A")]):
+        with col:
+            st.markdown(
+                f"<div class='mf-card'><div style='font-size:30px'>{icon}</div>"
+                f"<p style='font-size:17px;font-weight:700;color:{color};margin:6px 0'>{title}</p>"
+                f"<p style='font-size:14px;color:#555'>{body}</p></div>",
+                unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # How a mag flowmeter works (schematic — minimal text)
+    st.markdown("<h3 style='color:#1565C0'>How a magnetic flowmeter works</h3>", unsafe_allow_html=True)
+    sc1, sc2 = st.columns([3, 2])
+    with sc1:
+        if IMG_MAG_SCHEMA and not IMG_MAG_SCHEMA.startswith("REPLACE_"):
+            st.image(IMG_MAG_SCHEMA, use_container_width=True,
+                     caption="Faraday's law of induction — V = B × L × v")
+        else:
+            st.info("🖼️ Mag-flowmeter schematic goes here — set `IMG_MAG_SCHEMA` at the top of app.py.")
+    with sc2:
+        st.markdown(
+            "<div class='mf-card'>"
+            "<p style='font-size:15px;color:#444;margin:0'>A conductive fluid moving through a magnetic field "
+            "generates a voltage proportional to its velocity (<b>V = B × L × v</b>). Electrodes pick it up; "
+            "the liner insulates the tube. MagFlow AI selects every component this depends on.</p></div>",
+            unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # How to use it (first-time user steps)
+    st.markdown("<h2 style='color:#1B2A4A'>How to use it</h2>", unsafe_allow_html=True)
+    steps = [
+        ("1 · Enter process data", "Open the <b>Recommendation Engine</b>, then fill the fluid, pipe, operating conditions and any special notes."),
+        ("2 · Run the engine", "Click <b>Run Recommendation</b>. You'll get all four layers: validation, materials, vendors, and TCO & drift."),
+        ("3 · Get your maintenance record", "Open the permanent <b>maintenance link</b> (stored online, opens in a new tab) or download the offline Excel."),
+        ("4 · Log interventions over time", "Use <b>Maintenance History</b> to record each intervention by tag — years later, search the tag to find your work."),
+        ("5 · Import projects", "Use <b>Project Import</b> to upload a datasheet PDF; the AI extracts instruments and flags new materials."),
+    ]
+    for title, body in steps:
+        st.markdown(f"<div class='mf-step'><b>{title}</b><br>{body}</div>", unsafe_allow_html=True)
+
+    st.divider()
+    ec1, ec2, ec3 = st.columns([1, 2, 1])
+    with ec2:
+        if st.button("🚀 Get Started", type="primary", use_container_width=True, key="enter_bottom"):
+            st.session_state.page = "app"
+            st.rerun()
+
+if st.session_state.page == "home":
+    render_landing()
+    st.stop()
+
+# ============================================================
+#  SIDEBAR (only inside the app, not on landing)
+# ============================================================
 with st.sidebar:
+    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+        st.image(IMG_JESA_LOGO, width=130)
+    if st.button("🏠 Home", use_container_width=True):
+        st.session_state.page = "home"
+        st.rerun()
+    st.divider()
     st.markdown("### 🤖 MagFlow Assistant")
     lang_options = {"🇫🇷 French": "fr-FR", "🇬🇧 English": "en-US", "🇸🇦 Arabic": "ar-SA", "🇪🇸 Spanish": "es-ES"}
     selected_lang = st.selectbox("Voice language", list(lang_options.keys()), label_visibility="collapsed")
@@ -508,7 +744,7 @@ with st.sidebar:
     }}
     function sendVoice(){{
         if(recognition)recognition.stop();
-        if(transcript)window.location.href='?voice='+encodeURIComponent(transcript);
+        if(transcript)window.parent.postMessage({{type:'voice_text', text:transcript}}, '*');
         document.getElementById('voiceBtn').innerText='🎤 Tap to speak';
         document.getElementById('sendBtn').style.display='none';
         transcript='';
@@ -516,7 +752,9 @@ with st.sidebar:
     </script>"""
     st.components.v1.html(voice_html, height=80)
     vq = st.query_params.get("voice", None)
-    if vq: st.query_params.clear(); st.session_state.voice_input = vq
+    if vq:
+        st.query_params.clear()
+        st.session_state.voice_input = vq
     st.caption("Or type:")
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "👋 How can I help you today?"}]
@@ -535,15 +773,22 @@ with st.sidebar:
             st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
     if st.button("🗑️ Clear", use_container_width=True):
-        st.session_state.messages = [{"role": "assistant", "content": "👋 Cleared."}]; st.rerun()
+        st.session_state.messages = [{"role": "assistant", "content": "👋 Cleared."}]
 
-# ===== MAIN =====
+# ============================================================
+#  APP HEADER + TABS  (Dashboard moved to LAST)
+# ============================================================
 st.markdown("""<div style='text-align:center;padding:10px 0'><h1 style='color:#1B2A4A;margin:0'>🔧 MagFlow AI</h1><p style='font-size:16px;color:#555'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p><p style='font-size:12px;color:#999'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control</p><p style='font-size:11px;color:#bbb'>Developed by Maroua Hakkak — 2026</p></div>""", unsafe_allow_html=True)
 st.divider()
 
-mt1, mt2, mt3, mt4 = st.tabs(["🔧 Recommendation Engine", "📊 Dashboard", "📋 Maintenance History", "📂 Project Import"])
+# New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
+mt_reco, mt_hist, mt_import, mt_dash = st.tabs(
+    ["🔧 Recommendation Engine", "📋 Maintenance History", "📂 Project Import", "📊 Dashboard"])
 
-with mt3:
+# ------------------------------------------------------------
+#  MAINTENANCE HISTORY
+# ------------------------------------------------------------
+with mt_hist:
     st.header("📋 Maintenance History")
     st.markdown("Log and track all maintenance interventions for each flowmeter across JESA/OCP projects.")
     with st.expander("📥 Import from Maintenance Excel (Historical Data sheet)", expanded=False):
@@ -579,6 +824,15 @@ with mt3:
         st.subheader("🔍 View History by Tag")
         search_tag = st.text_input("Search Tag Number", placeholder="e.g., 204M-FE/FIT-063M")
         if search_tag:
+            # Persistent maintenance link for this tag
+            link, lerr = get_or_create_maintenance_sheet(search_tag)
+            if link:
+                st.markdown(
+                    f"<a href='{link}' target='_blank' style='display:inline-block;background:#1565C0;"
+                    f"color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600'>"
+                    f"🔗 Open online maintenance record for {search_tag} (new tab)</a>",
+                    unsafe_allow_html=True)
+                st.caption("This link is permanent — bookmark it. The record lives online and survives years of use.")
             with st.spinner("Loading history..."):
                 records = load_history(tag_filter=search_tag)
             if records:
@@ -612,7 +866,10 @@ with mt3:
                         if r.get('Task'): st.caption(f"↳ {r.get('Task','')[:80]}{'...' if len(r.get('Task','')) > 80 else ''}")
         else: st.info("No interventions recorded yet.")
 
-with mt2:
+# ------------------------------------------------------------
+#  DASHBOARD  (now the LAST tab)
+# ------------------------------------------------------------
+with mt_dash:
     st.header("📊 JESA Project Analytics")
     pc = {}
     for p in ai.data.project_data:
@@ -645,7 +902,10 @@ with mt2:
     with s5: st.metric("Drift", len(ai.data.drift_indicators))
     with s6: st.metric("Projects", len(ai.data.project_data))
 
-with mt1:
+# ------------------------------------------------------------
+#  RECOMMENDATION ENGINE
+# ------------------------------------------------------------
+with mt_reco:
     tab1,tab2,tab3,tab4 = st.tabs(["🧪 Process Fluid","📐 Pipe Dimensions","🌡️ Operating Conditions","📝 Special Notes"])
     with tab1:
         c1,c2 = st.columns(2)
@@ -689,6 +949,8 @@ with mt1:
         special = st.text_area("Special Conditions", placeholder="ATEX, SIL 2...", height=80)
         notes = st.text_area("User Notes", placeholder="Prefers Emerson...", height=80)
     st.divider()
+
+    # ---- Run: compute and STORE results in session_state (so downloads/lang don't wipe them) ----
     if st.button("🚀 Run Recommendation", type="primary", use_container_width=True):
         inp = ProcessInput(fluid_name=fluid, pipe_material=pipe_mat, pipe_thickness=pipe_thick,
             pipe_liner=pipe_liner, tube_material='SS 316L', dn=dn, flow_normal=flow_normal, flow_max=flow_max,
@@ -697,7 +959,19 @@ with mt1:
             pressure_drop=p_drop, conductivity=conductivity, viscosity=visc, density=dens,
             special_conditions=special, user_notes=notes)
         result = ai.recommend(inp)
+        st.session_state["reco_result"] = result
+        st.session_state["reco_meta"] = {
+            "fluid": fluid, "cat": cat,
+            "tag": tag_number if tag_number else "NEW-INSTRUMENT",
+        }
+
+    # ---- Render results from session_state (survives any re-run) ----
+    if "reco_result" in st.session_state:
+        result = st.session_state["reco_result"]
+        meta = st.session_state["reco_meta"]
+        fluid = meta["fluid"]; cat = meta["cat"]
         v,m,vendors,tco = result['validation'],result['materials'],result['vendors'],result['tco']
+
         with st.container(border=True):
             st.markdown("<div style='background-color:#E8F5E9;padding:15px;border-radius:10px;border-left:5px solid #2E7D32'><h2 style='color:#2E7D32;margin:0'>Layer 1 — Input Validation</h2></div>", unsafe_allow_html=True)
             st.write("")
@@ -708,7 +982,10 @@ with mt1:
                 st.error("❌ Magflow NOT suitable")
                 for e in v.errors: st.error(e)
             for w in v.warnings: st.warning(w)
-        if not v.is_valid: st.stop()
+
+        if not v.is_valid:
+            st.stop()
+
         with st.container(border=True):
             st.markdown("<div style='background-color:#E3F2FD;padding:15px;border-radius:10px;border-left:5px solid #1565C0'><h2 style='color:#1565C0;margin:0'>Layer 2 — Material Selection</h2></div>", unsafe_allow_html=True)
             st.write("")
@@ -731,15 +1008,18 @@ with mt1:
             if m.tube_warning: st.info(f"🔧 {m.tube_warning}")
             for w in m.warnings: st.warning(w)
             if m.remarks: st.info(f"📝 {m.remarks}")
+
         with st.container(border=True):
             st.markdown("<div style='background-color:#FFF3E0;padding:15px;border-radius:10px;border-left:5px solid #E65100'><h2 style='color:#E65100;margin:0'>Layer 3 — Vendor Recommendations</h2></div>", unsafe_allow_html=True)
             st.write("")
             st.caption(f"Compatible: {len(vendors['all'])} / {len(ai.data.vendor_models)} models")
             vc1,vc2,vc3 = st.columns(3)
-            for cw,label,key in [(vc1,"🔴 EMERSON","emerson"),(vc2,"🔵 ENDRESS+HAUSER","eh"),(vc3,"🟢 KROHNE","krohne")]:
+            for cw,label,key,vname in [(vc1,"🔴 EMERSON","emerson","Emerson"),(vc2,"🔵 ENDRESS+HAUSER","eh","Endress+Hauser"),(vc3,"🟢 KROHNE","krohne","Krohne")]:
                 with cw:
+                    url = vendor_url(vname)
+                    head = f"<a href='{url}' target='_blank' style='text-decoration:none;color:#1565C0'>{label} 🔗</a>" if url else label
+                    st.markdown(f"<p style='font-size:18px;font-weight:bold'>{head}</p>", unsafe_allow_html=True)
                     rec = vendors[key]
-                    st.markdown(f"<p style='font-size:18px;font-weight:bold'>{label}</p>", unsafe_allow_html=True)
                     if rec:
                         so = " ⚠️ SO" if rec.special_order else ""
                         st.markdown(f"<p style='font-size:16px;font-weight:bold;color:#333'>{rec.model}</p><p style='font-size:12px;color:#666'>{rec.model_type}{so}</p>", unsafe_allow_html=True)
@@ -748,16 +1028,24 @@ with mt1:
                         st.markdown(f"**IP:** {rec.ip}"); st.markdown(f"**Protocols:** {rec.protocols}"); st.markdown(f"**Diagnostics:** {rec.diagnostics}")
                     else: st.warning("No compatible model")
             with st.expander("🌍 Other Vendors"):
-                for ev in vendors.get('extra',[]): st.markdown(f"**{ev['vendor']}** — {ev['model']} ({ev['accuracy']}) — {ev['notes']}")
+                for ev in vendors.get('extra',[]):
+                    url = vendor_url(ev['vendor'])
+                    name = f"<a href='{url}' target='_blank'>{ev['vendor']}</a>" if url else ev['vendor']
+                    st.markdown(f"**{name}** — {ev['model']} ({ev['accuracy']}) — {ev['notes']}", unsafe_allow_html=True)
             for w in vendors['warnings']: st.warning(w)
+
         with st.container(border=True):
             st.markdown("<div style='background-color:#F3E5F5;padding:15px;border-radius:10px;border-left:5px solid #6A1B9A'><h2 style='color:#6A1B9A;margin:0'>Layer 4 — TCO & Drift Prediction</h2></div>", unsafe_allow_html=True)
             st.write("")
+            # Labels bold + larger than values; values not bold + smaller
+            def metric_block(label, value):
+                return (f"<p style='font-size:20px;font-weight:800;color:#1B2A4A;margin:0 0 2px 0'>{label}</p>"
+                        f"<p style='font-size:15px;font-weight:400;color:#444;margin:0'>{value}</p>")
             t1,t2,t3,t4 = st.columns(4)
-            with t1: st.metric("CAPEX Score", f"{tco.capex_score}/30")
-            with t2: st.metric("Calibration", f"Every {tco.calib_months} mo")
-            with t3: st.metric("Liner Life", tco.liner_life)
-            with t4: st.metric("Electrode Life", tco.electrode_life)
+            with t1: st.markdown(metric_block("CAPEX Score", f"{tco.capex_score}/30"), unsafe_allow_html=True)
+            with t2: st.markdown(metric_block("Calibration", f"Every {tco.calib_months} mo"), unsafe_allow_html=True)
+            with t3: st.markdown(metric_block("Liner Life", tco.liner_life), unsafe_allow_html=True)
+            with t4: st.markdown(metric_block("Electrode Life", tco.electrode_life), unsafe_allow_html=True)
             if tco.pressure_check: st.info(f"🔒 {tco.pressure_check}")
             st.markdown("<p style='font-size:18px;font-weight:bold'>CAPEX Breakdown</p>", unsafe_allow_html=True)
             bc = st.columns(len(tco.breakdown))
@@ -787,13 +1075,33 @@ with mt1:
                     st.markdown(f"<div style='background:{bg};padding:12px 15px;border-radius:8px;border-left:4px solid {tc2};margin:8px 0'><p style='font-size:16px;font-weight:bold;color:{tc2};margin:0'>{icon} {title}</p></div>", unsafe_allow_html=True)
                     for item in items: st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}")
             st.markdown("---")
-            tag = tag_number if tag_number else "NEW-INSTRUMENT"
+
+            tag = meta["tag"]
+
+            # ---- Persistent online maintenance record (opens in NEW tab) ----
+            st.markdown("<p style='font-size:18px;font-weight:bold'>🔗 Online Maintenance Record</p>", unsafe_allow_html=True)
+            link, lerr = get_or_create_maintenance_sheet(tag)
+            if link:
+                st.markdown(
+                    f"<a href='{link}' target='_blank' style='display:inline-block;background:#1565C0;"
+                    f"color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px'>"
+                    f"🔗 Open online maintenance record (new tab)</a>",
+                    unsafe_allow_html=True)
+                st.caption("Permanent link — stored online in the MagFlow AI database. Bookmark it: it survives "
+                           "laptop loss and can be reopened to log interventions years later. To resume later, "
+                           "search this tag in the **Maintenance History** tab.")
+            elif lerr:
+                st.warning(f"Couldn't create the online record link: {lerr}")
+
+            # ---- Offline option: download Excel ----
             history_for_export = load_history(tag_filter=tag) if tag != "NEW-INSTRUMENT" else []
             excel_buf = generate_maintenance_excel(tag, fluid, cat, m, vendors['emerson'], vendors['eh'], vendors['krohne'], tco, history_for_export)
-            st.download_button(label="📄 Download Maintenance Excel", data=excel_buf,
+            st.download_button(label="📄 Download Maintenance Excel (offline copy)", data=excel_buf,
                 file_name=f"MagFlow_Maintenance_{tag.replace('/','_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            st.caption("💡 3 sheets: Guideline, Maintenance Checklist, Historical Data (pre-filled from shared database)")
+            st.caption("💡 Offline copy: 3 sheets (Guideline, Maintenance Checklist, Historical Data). "
+                       "Use the link above for the permanent online record.")
+
             st.markdown("<p style='font-size:18px;font-weight:bold'>🔍 Validation vs JESA Projects</p>", unsafe_allow_html=True)
             if tco.validation:
                 for match in tco.validation:
@@ -811,7 +1119,10 @@ with mt1:
         st.divider()
         st.caption("Source: JESA Internal DB, JESA Flow App 2024, Vendor datasheets")
 
-with mt4:
+# ------------------------------------------------------------
+#  PROJECT IMPORT
+# ------------------------------------------------------------
+with mt_import:
     st.header("📂 Project Import — Datasheet Analyzer")
     st.markdown("Upload a JESA flowmeter datasheet PDF. The AI extracts all instrument data, **detects new materials**, and updates the database automatically.")
     col_upload, col_db = st.columns([1, 1])
