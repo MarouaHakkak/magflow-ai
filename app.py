@@ -148,6 +148,134 @@ def save_history(date, tag, intervention_type, task, result, technician, notes):
     except:
         return False
 
+# ============================================================
+#  CHECKLIST PERSISTENCE  (pre-fill the checklist for a tag)
+#  Stores filled checklist cells in a Google Sheet tab "Checklist Records"
+#  Key per cell: tag :: period :: task :: column_label
+# ============================================================
+CHECKLIST_WS = "Checklist Records"
+
+def _checklist_key(tag, period, task, col_label):
+    return f"{str(tag).strip()}::{str(period).strip()}::{str(task).strip()}::{str(col_label).strip()}"
+
+def _checklist_ws():
+    """Return the gspread worksheet for checklist records (create if missing)."""
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        client_gs = gspread.authorize(creds)
+        ss = client_gs.open_by_key(SHEET_ID)
+        try:
+            ws = ss.worksheet(CHECKLIST_WS)
+        except gspread.WorksheetNotFound:
+            ws = ss.add_worksheet(title=CHECKLIST_WS, rows=2000, cols=6)
+            ws.append_row(["Tag", "Period", "Task", "Column", "Value", "Updated"])
+        return ws
+    except Exception:
+        return None
+
+def load_checklist_records(tag):
+    """Return {key: value} of saved checklist cells for this tag."""
+    ws = _checklist_ws()
+    if ws is None:
+        return {}
+    try:
+        out = {}
+        for r in ws.get_all_records():
+            if str(r.get("Tag", "")).strip() != str(tag).strip():
+                continue
+            key = _checklist_key(r.get("Tag", ""), r.get("Period", ""), r.get("Task", ""), r.get("Column", ""))
+            out[key] = str(r.get("Value", ""))
+        return out
+    except Exception:
+        return {}
+
+def save_checklist_records(tag, cells):
+    """cells = {key: value}. Last-write-wins: append rows; latest read wins on load
+    because get_all_records keeps order and we overwrite in the dict."""
+    ws = _checklist_ws()
+    if ws is None:
+        return 0
+    try:
+        now = datetime.now().strftime('%Y-%m-%d %H:%M')
+        rows = []
+        for key, val in cells.items():
+            parts = key.split("::")
+            if len(parts) != 4:
+                continue
+            t, period, task, col = parts
+            rows.append([t, period, task, col, val, now])
+        if rows:
+            ws.append_rows(rows, value_input_option="RAW")
+        return len(rows)
+    except Exception:
+        return 0
+
+def read_checklist_from_excel(uploaded_file, tag):
+    """Read the 'Maintenance Checklist' sheet of an uploaded Excel and return
+    {key: value} for every filled data cell. Re-derives period from headers."""
+    try:
+        wb = openpyxl.load_workbook(uploaded_file)
+        if "Maintenance Checklist" not in wb.sheetnames:
+            return {}
+        ws = wb["Maintenance Checklist"]
+        out = {}
+        current_month = None
+        current_period = None
+        mode = None  # continuous / dated
+        for r in range(1, ws.max_row + 1):
+            a = ws.cell(row=r, column=1).value
+            a_str = str(a).strip() if a is not None else ""
+            if a_str.startswith("📅"):
+                toks = a_str.replace("📅", "").strip().split()
+                current_month = toks[0] if toks else None
+                continue
+            if a_str.lstrip().startswith("Week"):
+                wk = a_str.strip()
+                current_period = f"{current_month}/{wk}"
+                mode = "continuous"
+                continue
+            if "Monthly tasks" in a_str:
+                current_period = f"{current_month}/Monthly"
+                mode = "dated"
+                continue
+            if "Quarterly" in a_str and "—" in a_str:
+                qlabel = a_str.split("—")[-1].strip()
+                current_period = f"{current_month}/Quarterly {qlabel}"
+                mode = "dated"
+                continue
+            if "Semi-annual" in a_str and "—" in a_str:
+                slabel = a_str.split("—")[-1].strip()
+                current_period = f"{current_month}/Semi-annual {slabel}"
+                mode = "dated"
+                continue
+            if "ANNUAL MAINTENANCE" in a_str:
+                current_period = "ANNUAL"
+                mode = "dated"
+                continue
+            if "MULTI-YEAR" in a_str:
+                current_period = "MULTI-YEAR"
+                mode = "dated"
+                continue
+            if "COMPONENT REPLACEMENT" in a_str:
+                current_period = "REPLACEMENT"
+                mode = "dated"
+                continue
+            task = ws.cell(row=r, column=2).value
+            if a_str == "☐" and task and current_period:
+                task = str(task).strip()
+                if mode == "continuous":
+                    cols = [(3,"Mon"),(4,"Tue"),(5,"Wed"),(6,"Thu"),(7,"Fri"),(8,"Sat"),(9,"Sun"),(10,"Status"),(11,"Technician")]
+                else:
+                    cols = [(10,"Date"),(11,"Technician"),(12,"Work done")]
+                for col, lab in cols:
+                    val = ws.cell(row=r, column=col).value
+                    if val is not None and str(val).strip() != "":
+                        out[_checklist_key(tag, current_period, task, lab)] = str(val)
+        return out
+    except Exception:
+        return {}
+
 def import_from_excel(uploaded_file):
     try:
         wb = openpyxl.load_workbook(uploaded_file)
@@ -412,13 +540,17 @@ def load_project_data_from_gsheet():
     except:
         return []
 
-def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor_k, tco, history_records=None):
+def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor_k, tco, history_records=None, checklist_data=None):
     wb = openpyxl.Workbook()
     vn = vendor_e.model if vendor_e else (vendor_eh.model if vendor_eh else (vendor_k.model if vendor_k else 'N/A'))
     vd = vendor_e.diagnostics if vendor_e else (vendor_eh.diagnostics if vendor_eh else (vendor_k.diagnostics if vendor_k else 'N/A'))
     today = datetime.now().strftime('%Y-%m-%d')
     year = datetime.now().year
     mnt = tco.maintenance
+    checklist_data = checklist_data or {}
+    def _pf(period, task, col_label):
+        """Return saved value for this cell, or None."""
+        return checklist_data.get(f"{str(tag).strip()}::{period}::{str(task).strip()}::{col_label}")
     title_font = Font(bold=True, size=14, color="1B2A4A")
     h_font = Font(bold=True, size=11, color="FFFFFF")
     n_font = Font(size=10)
@@ -535,7 +667,11 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
                 for item in mnt.continuous:
                     ws2.cell(row=row, column=1, value="☐").alignment = center
                     ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
+                    _period_c = f"{month_name}/Week {w}"
+                    _cols_c = {3:"Mon",4:"Tue",5:"Wed",6:"Thu",7:"Fri",8:"Sat",9:"Sun",10:"Status",11:"Technician"}
                     for d in range(3, 12):
+                        _sv = _pf(_period_c, item, _cols_c[d])
+                        if _sv is not None: ws2.cell(row=row, column=d, value=_sv)
                         ws2.cell(row=row, column=d).border = thin; ws2.cell(row=row, column=d).alignment = center
                     row += 1
                 row += 1
@@ -548,6 +684,10 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
             for item in mnt.monthly:
                 ws2.cell(row=row, column=1, value="☐").alignment = center
                 ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
+                _period_m = f"{month_name}/Monthly"
+                for _c,_lab in [(10,"Date"),(11,"Technician"),(12,"Work done")]:
+                    _sv = _pf(_period_m, item, _lab)
+                    if _sv is not None: ws2.cell(row=row, column=_c, value=_sv)
                 ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
                 ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
             row += 1
@@ -560,6 +700,10 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
             for item in mnt.quarterly:
                 ws2.cell(row=row, column=1, value="☐").alignment = center
                 ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
+                _period_q = f"{month_name}/Quarterly {quarter_months[m_idx]}"
+                for _c,_lab in [(10,"Date"),(11,"Technician"),(12,"Work done")]:
+                    _sv = _pf(_period_q, item, _lab)
+                    if _sv is not None: ws2.cell(row=row, column=_c, value=_sv)
                 ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
                 ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
             row += 1
@@ -801,40 +945,20 @@ with st.sidebar:
 #  APP HEADER + TABS  (Dashboard moved to LAST)
 #  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
-# Small discreet "Home" button, top-right
-_, hb = st.columns([6, 1])
-with hb:
-    if st.button("🏠 Home", key="title_home"):
+hc1, hc2 = st.columns([1, 6])
+with hc1:
+    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+        st.image(IMG_JESA_LOGO, width=120)
+with hc2:
+    st.markdown("<h1 style='color:#1B2A4A;margin:0 0 4px 0'>🔧 MagFlow AI</h1>", unsafe_allow_html=True)
+    if st.button("🏠 Back to Home", key="title_home"):
         st.session_state.page = "home"
         st.rerun()
-
-# Centered header with JESA logo + styled MagFlow AI title (Poppins + blue→teal gradient)
-st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
-.mf-header {{ text-align:center; margin-top:-8px; }}
-.mf-header img {{ height:46px; margin-bottom:8px; }}
-.mf-title {{
-    font-family:'Poppins',sans-serif;
-    font-weight:800;
-    font-size:46px;
-    background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
-    -webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
-    background-clip:text;
-    margin:0;
-    letter-spacing:0.5px;
-}}
-.mf-sub {{ font-size:16px;color:#555;margin:6px 0 0 0;font-weight:500; }}
-.mf-meta {{ font-size:12px;color:#999;margin:2px 0 0 0; }}
-</style>
-<div class="mf-header">
-    <img src="{IMG_JESA_LOGO}">
-    <p class="mf-title">🔧 MagFlow AI</p>
-    <p class="mf-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
-    <p class="mf-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control · Developed by Maroua Hakkak — 2026</p>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='font-size:15px;color:#555;margin:6px 0 0 0'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
+        "<p style='font-size:12px;color:#999;margin:0'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control · "
+        "Developed by Maroua Hakkak — 2026</p>",
+        unsafe_allow_html=True)
 st.divider()
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
@@ -851,12 +975,24 @@ with mt_hist:
         st.markdown("Upload a MagFlow AI maintenance Excel file — all filled rows from the **Historical Data** sheet will be imported automatically.")
         uploaded_excel = st.file_uploader("Upload Excel file", type=["xlsx"], key="excel_import")
         if uploaded_excel:
+            imp_tag = st.text_input("Tag Number for this checklist", placeholder="e.g., 204M-FE/FIT-063M", key="imp_tag")
             if st.button("📤 Import to Database", type="primary"):
                 with st.spinner("Reading Excel and saving to database..."):
                     count, error = import_from_excel(uploaded_excel)
+                    chk_saved = 0
+                    if imp_tag.strip():
+                        try:
+                            uploaded_excel.seek(0)
+                        except Exception:
+                            pass
+                        cells = read_checklist_from_excel(uploaded_excel, imp_tag.strip())
+                        chk_saved = save_checklist_records(imp_tag.strip(), cells)
                 if error: st.error(f"❌ Import failed: {error}")
-                elif count == 0: st.warning("⚠️ No valid rows found.")
-                else: st.success(f"✅ {count} intervention(s) imported!"); st.balloons()
+                elif count == 0 and chk_saved == 0: st.warning("⚠️ No valid rows found.")
+                else:
+                    msg = f"✅ {count} intervention(s) imported!"
+                    if chk_saved: msg += f" {chk_saved} checklist cell(s) saved."
+                    st.success(msg); st.balloons()
     st.divider()
     col_form, col_view = st.columns([1, 1])
     with col_form:
@@ -1127,7 +1263,8 @@ with mt_reco:
 
             # ---- Download Excel maintenance sheet ----
             history_for_export = load_history(tag_filter=tag) if tag != "NEW-INSTRUMENT" else []
-            excel_buf = generate_maintenance_excel(tag, fluid, cat, m, vendors['emerson'], vendors['eh'], vendors['krohne'], tco, history_for_export)
+            checklist_saved = load_checklist_records(tag) if tag != "NEW-INSTRUMENT" else {}
+            excel_buf = generate_maintenance_excel(tag, fluid, cat, m, vendors['emerson'], vendors['eh'], vendors['krohne'], tco, history_for_export, checklist_saved)
             st.download_button(label="📄 Download Maintenance Excel", data=excel_buf,
                 file_name=f"MagFlow_Maintenance_{tag.replace('/','_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
