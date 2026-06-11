@@ -1,4 +1,4 @@
-"""MagFlow AI v9 — Landing page, colorful UI, persistent maintenance links, state-safe"""
+"""MagFlow AI v9 — Landing page, colorful UI, offline maintenance Excel, state-safe"""
 import streamlit as st
 import anthropic
 from datetime import datetime
@@ -115,12 +115,6 @@ SHEET_ID = "1jVpJkHPtG808WtlKxKpcIxvNLvLyx8syIi0GlppNTgU"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 
-# Google Drive folder (owned by Maroua, shared with the service account as Editor)
-# where each instrument's standalone maintenance Google Sheet is stored.
-MAINT_DRIVE_FOLDER_ID = "10vp8M7h68f6VJR-rTcvPy6nrnimy1-pf"
-# A tab in the main spreadsheet used as an index: tag -> maintenance file URL
-MAINT_INDEX_WS = "Maintenance Links"
-
 @st.cache_resource
 def get_gsheet():
     try:
@@ -171,120 +165,6 @@ def import_from_excel(uploaded_file):
         return saved, None
     except Exception as e:
         return 0, str(e)
-
-# ============================================================
-#  PERSISTENT MAINTENANCE LINK  (one Google Sheet tab per tag)
-#  Stores a shareable URL in the app so the record survives for
-#  years and can be reopened from any machine.
-# ============================================================
-def _gs_client():
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
-
-def _drive_service():
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    from googleapiclient.discovery import build
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
-
-
-def _maint_index_get(tag):
-    """Look up an existing maintenance file URL for this tag (returns url or None)."""
-    try:
-        client_gs = _gs_client()
-        ss = client_gs.open_by_key(SHEET_ID)
-        try:
-            ws = ss.worksheet(MAINT_INDEX_WS)
-        except gspread.WorksheetNotFound:
-            return None
-        for row in ws.get_all_records():
-            if str(row.get("Tag", "")).strip() == str(tag).strip():
-                return row.get("URL") or None
-        return None
-    except Exception:
-        return None
-
-
-def _maint_index_save(tag, url, file_id):
-    """Remember the maintenance file URL for this tag."""
-    try:
-        client_gs = _gs_client()
-        ss = client_gs.open_by_key(SHEET_ID)
-        try:
-            ws = ss.worksheet(MAINT_INDEX_WS)
-        except gspread.WorksheetNotFound:
-            ws = ss.add_worksheet(title=MAINT_INDEX_WS, rows=500, cols=4)
-            ws.append_row(["Tag", "URL", "File ID", "Created"])
-        ws.append_row([str(tag), url, file_id, datetime.now().strftime('%Y-%m-%d %H:%M')])
-    except Exception:
-        pass
-
-
-def get_or_create_maintenance_sheet(tag, fluid=None, cat=None, mat=None,
-                                    vendor_e=None, vendor_eh=None, vendor_k=None, tco=None):
-    """Return a permanent shareable URL to a STANDALONE Google Sheet for this tag.
-
-    The file is a real, separate spreadsheet (its own file in the shared Drive
-    folder) containing exactly three sheets — Guideline, Maintenance Checklist,
-    Historical Data — with all the Excel styling preserved (it's the styled
-    Excel, uploaded and converted to a Google Sheet).
-
-    Opens in a NEW browser tab so MagFlow AI stays open. The link is remembered
-    per tag, so re-running or searching the same tag reopens the SAME file
-    instead of creating a duplicate.
-    """
-    try:
-        # 1) Already created for this tag? Return the same link.
-        existing_url = _maint_index_get(tag)
-        if existing_url:
-            return existing_url, None
-
-        # 2) Need full data to build the styled Excel the first time.
-        if mat is None or tco is None:
-            return None, ("No maintenance file exists yet for this tag. Run the "
-                          "Recommendation Engine for it once to create the online record.")
-
-        # 3) Build the styled Excel in memory (reuses the existing generator).
-        history_for_export = load_history(tag_filter=str(tag)) if str(tag) != "NEW-INSTRUMENT" else []
-        excel_buf = generate_maintenance_excel(
-            tag, fluid or "", cat or "", mat, vendor_e, vendor_eh, vendor_k, tco, history_for_export)
-        excel_buf.seek(0)
-
-        # 4) Upload to the shared Drive folder, converting xlsx -> Google Sheet.
-        from googleapiclient.http import MediaIoBaseUpload
-        service = _drive_service()
-        safe_tag = str(tag).replace("/", "-")
-        file_metadata = {
-            "name": f"MagFlow Maintenance — {safe_tag}",
-            "mimeType": "application/vnd.google-apps.spreadsheet",  # convert to Google Sheet
-            "parents": [MAINT_DRIVE_FOLDER_ID],
-        }
-        media = MediaIoBaseUpload(
-            excel_buf,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            resumable=False)
-        created = service.files().create(
-            body=file_metadata, media_body=media, fields="id, webViewLink",
-            supportsAllDrives=True).execute()
-        file_id = created["id"]
-        url = created.get("webViewLink") or f"https://docs.google.com/spreadsheets/d/{file_id}/edit"
-
-        # 5) Make it shareable: anyone with the link can EDIT (to log interventions).
-        try:
-            service.permissions().create(
-                fileId=file_id,
-                body={"type": "anyone", "role": "writer"},
-                supportsAllDrives=True).execute()
-        except Exception:
-            pass  # file still works for the owner / shared users even if this fails
-
-        # 6) Remember it so the same tag reopens the same file.
-        _maint_index_save(tag, url, file_id)
-        return url, None
-    except Exception as e:
-        return None, str(e)
-
 
 def build_context():
     fluids = ", ".join(f['name'] for f in ai.data.fluids[:25]) + f"... ({len(ai.data.fluids)} total)"
@@ -588,7 +468,7 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
     ws2 = wb.create_sheet("Maintenance Checklist")
     ws2.column_dimensions['A'].width = 5; ws2.column_dimensions['B'].width = 45
     for col in range(3, 10): ws2.column_dimensions[get_column_letter(col)].width = 10
-    ws2.column_dimensions['J'].width = 15; ws2.column_dimensions['K'].width = 20
+    ws2.column_dimensions['J'].width = 15; ws2.column_dimensions['K'].width = 20; ws2.column_dimensions['L'].width = 40
     ws2.merge_cells('A1:K1'); ws2['A1'] = f"🔧 Maintenance Checklist — {tag}"; ws2['A1'].font = title_font
     ws2['A2'] = f"Fluid: {fluid} | Category: {cat} | Year: {year}"; ws2['A2'].font = Font(italic=True, color="666666")
 
@@ -608,6 +488,7 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
         ("Status", "Write: OK / Conform, or NC / Non-conform if a problem is found.", False),
         ("Technician", "Enter the full name of the person who did the task.", False),
         ("Date", "For monthly/quarterly/annual tasks, write the date done (YYYY-MM-DD).", False),
+        ("Work done", "For monthly/quarterly tasks, describe the action actually performed.", False),
         ("Notes", "Add any observation, anomaly, or action taken.", False),
         ("", "", False),
         ("Cadence", "Filling frequency", True),
@@ -662,21 +543,25 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
             ws2.merge_cells(f'A{row}:B{row}')
             ws2[f'A{row}'] = f"   📋 Monthly tasks — {month_name}"; ws2[f'A{row}'].font = Font(bold=True, size=10, color="1565C0"); ws2[f'A{row}'].fill = PatternFill(start_color="BBDEFB", end_color="BBDEFB", fill_type="solid")
             ws2.cell(row=row, column=10, value="Date").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).border = thin
-            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin; row += 1
+            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin
+            ws2.cell(row=row, column=12, value="Work done").font = Font(bold=True, size=9); ws2.cell(row=row, column=12).border = thin; row += 1
             for item in mnt.monthly:
                 ws2.cell(row=row, column=1, value="☐").alignment = center
                 ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
+                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
+                ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
             row += 1
         if m_idx in quarter_months and mnt.quarterly:
             ws2.merge_cells(f'A{row}:B{row}')
             ws2[f'A{row}'] = f"   🔍 Quarterly — {quarter_months[m_idx]}"; ws2[f'A{row}'].font = Font(bold=True, size=10, color="E65100"); ws2[f'A{row}'].fill = o_fill
             ws2.cell(row=row, column=10, value="Date").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).border = thin
-            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin; row += 1
+            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin
+            ws2.cell(row=row, column=12, value="Work done").font = Font(bold=True, size=9); ws2.cell(row=row, column=12).border = thin; row += 1
             for item in mnt.quarterly:
                 ws2.cell(row=row, column=1, value="☐").alignment = center
                 ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
+                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
+                ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
             row += 1
         if m_idx in semester_months and mnt.semi_annual:
             ws2.merge_cells(f'A{row}:B{row}')
@@ -711,6 +596,7 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
             ws2.cell(row=row, column=1, value="☐").alignment = center
             ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
             ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
+        row += 1
     ws3 = wb.create_sheet("Historical Data")
     for col, w in [(1,15),(2,20),(3,20),(4,35),(5,15),(6,20),(7,30)]:
         ws3.column_dimensions[get_column_letter(col)].width = w
@@ -831,7 +717,7 @@ def render_landing():
     steps = [
         ("1 · Enter process data", "Open the <b>Recommendation Engine</b>, then fill the fluid, pipe, operating conditions and any special notes."),
         ("2 · Run the engine", "Click <b>Run Recommendation</b>. You'll get all four layers: validation, materials, vendors, and TCO & drift."),
-        ("3 · Get your maintenance record", "Open the permanent <b>maintenance link</b> (stored online, opens in a new tab) or download the offline Excel."),
+        ("3 · Get your maintenance sheet", "Download the maintenance Excel — Guideline, full month-by-month checklist, and historical data."),
         ("4 · Log interventions over time", "Use <b>Maintenance History</b> to record each intervention by tag — years later, search the tag to find your work."),
         ("5 · Import projects", "Use <b>Project Import</b> to upload a datasheet PDF; the AI extracts instruments and flags new materials."),
     ]
@@ -974,19 +860,6 @@ with mt_hist:
         st.subheader("🔍 View History by Tag")
         search_tag = st.text_input("Search Tag Number", placeholder="e.g., 204M-FE/FIT-063M")
         if search_tag:
-            # Persistent maintenance link for this tag (created via the Recommendation Engine)
-            link, lerr = get_or_create_maintenance_sheet(search_tag)
-            if link:
-                st.markdown(
-                    f"<a href='{link}' target='_blank' style='display:inline-block;background:#1565C0;"
-                    f"color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600'>"
-                    f"🔗 Open online maintenance record for {search_tag} (new tab)</a>",
-                    unsafe_allow_html=True)
-                st.caption("This link is permanent — bookmark it. The record (Guideline · Maintenance Checklist · "
-                           "Historical Data) lives online as its own file and survives years of use.")
-            else:
-                st.info("ℹ️ No online maintenance record exists for this tag yet. Run it once in the "
-                        "**Recommendation Engine** to create the file, then the link will appear here.")
             with st.spinner("Loading history..."):
                 records = load_history(tag_filter=search_tag)
             if records:
@@ -1232,34 +1105,14 @@ with mt_reco:
 
             tag = meta["tag"]
 
-            # ---- Persistent online maintenance record (opens in NEW tab) ----
-            st.markdown("<p style='font-size:18px;font-weight:bold'>🔗 Online Maintenance Record</p>", unsafe_allow_html=True)
-            link, lerr = get_or_create_maintenance_sheet(
-                tag, fluid=fluid, cat=cat, mat=m,
-                vendor_e=vendors['emerson'], vendor_eh=vendors['eh'], vendor_k=vendors['krohne'],
-                tco=tco)
-            if link:
-                st.markdown(
-                    f"<a href='{link}' target='_blank' style='display:inline-block;background:#1565C0;"
-                    f"color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px'>"
-                    f"🔗 Open online maintenance record (new tab)</a>",
-                    unsafe_allow_html=True)
-                st.caption("Permanent link — its **own Google Sheet file** with exactly **3 tabs** "
-                           "(Guideline · full month-by-month Maintenance Checklist · Historical Data), "
-                           "same styling as the Excel. Bookmark it: it survives laptop loss and reopens to "
-                           "log interventions years later. **To download:** File → Download → Microsoft Excel (.xlsx). "
-                           "To resume later, search this tag in the **Maintenance History** tab.")
-            elif lerr:
-                st.warning(f"Couldn't create the online record link: {lerr}")
-
-            # ---- Offline option: download Excel ----
+            # ---- Download Excel maintenance sheet ----
             history_for_export = load_history(tag_filter=tag) if tag != "NEW-INSTRUMENT" else []
             excel_buf = generate_maintenance_excel(tag, fluid, cat, m, vendors['emerson'], vendors['eh'], vendors['krohne'], tco, history_for_export)
-            st.download_button(label="📄 Download Maintenance Excel (offline copy)", data=excel_buf,
+            st.download_button(label="📄 Download Maintenance Excel", data=excel_buf,
                 file_name=f"MagFlow_Maintenance_{tag.replace('/','_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            st.caption("💡 Offline copy: 3 sheets (Guideline, Maintenance Checklist, Historical Data). "
-                       "Use the link above for the permanent online record.")
+            st.caption("💡 The Excel sheet has 3 tabs: Guideline, Maintenance Checklist (month-by-month, "
+                       "with a Work done column for monthly & quarterly tasks), and Historical Data.")
 
             st.markdown("<p style='font-size:18px;font-weight:bold'>🔍 Validation vs JESA Projects</p>", unsafe_allow_html=True)
             if tco.validation:
