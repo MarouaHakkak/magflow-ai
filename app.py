@@ -801,20 +801,40 @@ with st.sidebar:
 #  APP HEADER + TABS  (Dashboard moved to LAST)
 #  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
-hc1, hc2 = st.columns([1, 6])
-with hc1:
-    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
-        st.image(IMG_JESA_LOGO, width=120)
-with hc2:
-    st.markdown("<h1 style='color:#1B2A4A;margin:0 0 4px 0'>🔧 MagFlow AI</h1>", unsafe_allow_html=True)
-    if st.button("🏠 Back to Home", key="title_home"):
+# Small discreet "Home" button, top-right
+_, hb = st.columns([6, 1])
+with hb:
+    if st.button("🏠 Home", key="title_home"):
         st.session_state.page = "home"
         st.rerun()
-    st.markdown(
-        "<p style='font-size:15px;color:#555;margin:6px 0 0 0'>AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
-        "<p style='font-size:12px;color:#999;margin:0'>PFE ENSA — JESA (OCP × Worley) | Instrumentation & Control · "
-        "Developed by Maroua Hakkak — 2026</p>",
-        unsafe_allow_html=True)
+
+# Centered header with JESA logo + styled MagFlow AI title (Poppins + blue→teal gradient)
+st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
+.mf-header {{ text-align:center; margin-top:-8px; }}
+.mf-header img {{ height:46px; margin-bottom:8px; }}
+.mf-title {{
+    font-family:'Poppins',sans-serif;
+    font-weight:800;
+    font-size:46px;
+    background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+    background-clip:text;
+    margin:0;
+    letter-spacing:0.5px;
+}}
+.mf-sub {{ font-size:16px;color:#555;margin:6px 0 0 0;font-weight:500; }}
+.mf-meta {{ font-size:12px;color:#999;margin:2px 0 0 0; }}
+</style>
+<div class="mf-header">
+    <img src="{IMG_JESA_LOGO}">
+    <p class="mf-title">🔧 MagFlow AI</p>
+    <p class="mf-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
+    <p class="mf-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control · Developed by Maroua Hakkak — 2026</p>
+</div>
+""", unsafe_allow_html=True)
 st.divider()
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
