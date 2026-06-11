@@ -59,7 +59,14 @@ st.markdown("""
 <style>
 /* Tab bar: bigger, clearer labels spread across the full page width (note 13) */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 18px;
+    gap: 8px;
+    display: flex;
+    width: 100%;
+}
+.stTabs [data-baseweb="tab"] {
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: center;
 }
 .stTabs [data-baseweb="tab"] p {
     font-size: 16px !important;
