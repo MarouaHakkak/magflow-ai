@@ -59,24 +59,11 @@ st.markdown("""
 <style>
 /* Tab bar: bigger, clearer labels spread across the full page width (note 13) */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 14px;
-    display: flex;
-    width: 100%;
+    gap: 18px;
 }
-.stTabs [data-baseweb="tab"] {
-    flex: 1 1 0;
-    justify-content: center;
-    text-align: center;
-    padding: 14px 10px;
-    background: #F2F6FC;
-    border-radius: 10px 10px 0 0;
-    font-weight: 600;
-    font-size: 17px;
-}
-.stTabs [data-baseweb="tab"] p { font-size: 17px !important; font-weight: 600 !important; }
-.stTabs [aria-selected="true"] {
-    background: #E3F0FF;
-    border-bottom: 3px solid #1565C0;
+.stTabs [data-baseweb="tab"] p {
+    font-size: 16px !important;
+    font-weight: 600 !important;
 }
 /* Soft page background */
 .stApp { background: linear-gradient(180deg, #FBFCFF 0%, #F4F8FD 100%); }
