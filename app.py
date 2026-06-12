@@ -945,23 +945,26 @@ with st.sidebar:
 #  APP HEADER + TABS  (Dashboard moved to LAST)
 #  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
-# Small discreet "Home" button, top-right
-_, hb = st.columns([6, 1])
-with hb:
+# Top row: JESA logo (top-left, bigger) + discreet Home button (top-right)
+htop1, htop2 = st.columns([3, 1])
+with htop1:
+    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+        st.image(IMG_JESA_LOGO, width=160)
+with htop2:
+    st.write("")
     if st.button("🏠 Home", key="title_home"):
         st.session_state.page = "home"
         st.rerun()
 
-# Left-aligned header: JESA logo + styled MagFlow AI title (Comfortaa, big)
+# Centered big MagFlow AI title + description
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&display=swap');
-.mf-header {{ text-align:left; margin-top:-8px; }}
-.mf-header img {{ height:50px; margin-bottom:6px; }}
+.mf-header {{ text-align:center; margin-top:4px; }}
 .mf-title {{
     font-family:'Comfortaa',cursive;
     font-weight:700;
-    font-size:52px;
+    font-size:74px;
     background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
     -webkit-background-clip:text;
     -webkit-text-fill-color:transparent;
@@ -969,11 +972,10 @@ st.markdown(f"""
     margin:0;
     line-height:1.15;
 }}
-.mf-sub {{ font-size:16px;color:#555;margin:8px 0 0 0;font-weight:500; }}
-.mf-meta {{ font-size:12px;color:#999;margin:2px 0 0 0; }}
+.mf-sub {{ font-size:19px;color:#444;margin:10px 0 0 0;font-weight:600; }}
+.mf-meta {{ font-size:13px;color:#999;margin:4px 0 0 0; }}
 </style>
 <div class="mf-header">
-    <img src="{IMG_JESA_LOGO}">
     <p class="mf-title">🔧 MagFlow AI</p>
     <p class="mf-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
     <p class="mf-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control · Developed by Maroua Hakkak — 2026</p>
