@@ -8,6 +8,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 import io
 import json
+import html
 import gspread
 from google.oauth2.service_account import Credentials
 from magflow_ai import MagFlowAI, ProcessInput
@@ -91,6 +92,44 @@ section[data-testid="stSidebar"] h3 {
     color: var(--ink);
     font-weight: 800;
     letter-spacing: -0.02em;
+}
+.mf-assistant-greeting {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    color: #2E3442;
+    font-size: 18px;
+    line-height: 1.45;
+    font-weight: 500;
+    margin: 18px 0 14px 0;
+}
+.mf-bot-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: #FFA31A;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+.mf-assistant-reply {
+    max-height: 150px;
+    overflow-y: auto;
+    background: #FFFFFF;
+    border: 1px solid #EEF2F7;
+    border-radius: 14px;
+    padding: 12px 14px;
+    color: #344054;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 10px 0;
+}
+.mf-assistant-label {
+    color: #7A8190;
+    font-size: 15px;
+    margin: 18px 0 8px 0;
 }
 /* Tab bar: bigger, clearer labels spread across the full page width (note 13) */
 .stTabs [data-baseweb="tab-list"] {
@@ -180,72 +219,54 @@ div[data-baseweb="select"] > div, input, textarea {
 .mf-app-hero {
     position: relative;
     overflow: hidden;
-    min-height: 260px;
-    border-radius: 26px;
-    padding: 56px 52px;
-    margin: 4px 0 28px 0;
-    background:
-        radial-gradient(circle at 18% 45%, rgba(11,85,217,0.12) 0%, transparent 22%),
-        radial-gradient(circle at 84% 12%, rgba(20,154,214,0.18) 0%, transparent 28%),
-        linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(235,245,255,0.92) 100%);
-    border: 1px solid rgba(214,229,247,0.9);
-    box-shadow: 0 18px 48px rgba(16,42,99,0.10);
-}
-.mf-app-hero:after {
-    content: "";
-    position: absolute;
-    right: -90px;
-    bottom: -120px;
-    width: 560px;
-    height: 300px;
-    border-radius: 50%;
-    background: rgba(11,85,217,0.08);
-    transform: rotate(-12deg);
+    min-height: 220px;
+    border-radius: 0;
+    padding: 52px 52px 48px 52px;
+    margin: -6px -10px 28px -10px;
+    background: #F8FBFF;
+    border-bottom: 1px solid rgba(180,207,238,0.8);
+    box-shadow: none;
 }
 .mf-hero-inner {
     position: relative;
     z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 30px;
+    display: block;
     text-align: center;
-}
-.mf-wave-mark {
-    width: 170px;
-    height: 104px;
-    border-radius: 52px;
-    background: linear-gradient(135deg, rgba(11,85,217,0.14), rgba(20,154,214,0.22));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #0B55D9;
-    font-size: 72px;
-    font-weight: 800;
-    box-shadow: inset 0 0 24px rgba(255,255,255,0.8), 0 16px 35px rgba(11,85,217,0.14);
+    width: 100%;
+    margin: 0 auto;
 }
 .mf-app-title {
     margin: 0;
-    font-size: clamp(58px, 7vw, 104px);
-    line-height: 0.95;
+    font-size: clamp(44px, 5.1vw, 70px);
+    line-height: 1.04;
     font-weight: 800;
-    letter-spacing: -0.06em;
-    color: var(--jesa-navy);
-}
-.mf-app-title span {
-    color: #16A6DA;
+    letter-spacing: -0.045em;
+    color: #18A6D8;
 }
 .mf-app-sub {
-    color: #5A6882;
-    font-size: 19px;
-    font-weight: 700;
-    margin: 18px 0 8px 0;
+    color: #56647C;
+    font-size: 20px;
+    font-weight: 800;
+    margin: 26px 0 18px 0;
 }
 .mf-app-meta {
-    color: #7A879C;
-    font-size: 14px;
-    font-weight: 600;
+    color: #748196;
+    font-size: 18px;
+    font-weight: 800;
     margin: 0;
+}
+.mf-home-row {
+    margin: 0 0 -58px 0;
+    position: relative;
+    z-index: 5;
+}
+.mf-home-row .stButton button {
+    background: rgba(255,255,255,0.88) !important;
+    color: #344054 !important;
+    border: 1px solid #E2EAF5 !important;
+    border-radius: 18px !important;
+    box-shadow: 0 12px 30px rgba(16,42,99,0.10) !important;
+    min-height: 54px;
 }
 .mf-section-shell {
     background: rgba(255,255,255,0.72);
@@ -1236,35 +1257,49 @@ with st.sidebar:
     if vq:
         st.query_params.clear()
         st.session_state.voice_input = vq
-    st.caption("Or type:")
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "👋 How can I help you today?"}]
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+    latest_assistant = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "assistant"), "👋 How can I help you today?")
+    latest_assistant_html = html.escape(latest_assistant)
+    st.markdown("<div class='mf-assistant-label'>Or type:</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='mf-assistant-greeting'><span class='mf-bot-badge'>🤖</span>"
+        f"<span>{latest_assistant_html}</span></div>",
+        unsafe_allow_html=True
+    )
+
     vt = st.session_state.pop("voice_input", None)
-    prompt = st.chat_input("Ask a question...", key="ci")
-    if vt: prompt = vt
+    typed_prompt = st.text_area("Ask a question...", key="assistant_text", height=110, label_visibility="collapsed", placeholder="Ask a question...")
+    send_prompt = st.button("Send", key="assistant_send", use_container_width=True)
+    prompt = vt or (typed_prompt.strip() if send_prompt and typed_prompt.strip() else None)
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
         lr = search_local(prompt)
         ch = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[1:] if m["role"] in ["user","assistant"]][:-1]
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."): response = ask_claude(prompt, lr, ch)
-            st.markdown(response)
+        with st.spinner("Thinking..."):
+            response = ask_claude(prompt, lr, ch)
         st.session_state.messages.append({"role": "assistant", "content": response})
-    if st.button("🗑️ Clear", use_container_width=True):
+        st.markdown(f"<div class='mf-assistant-reply'>{html.escape(response)}</div>", unsafe_allow_html=True)
+    if st.button("Clear", use_container_width=True):
         st.session_state.messages = [{"role": "assistant", "content": "👋 Cleared."}]
 
 # ============================================================
 #  APP HEADER + TABS  (Dashboard moved to LAST)
 # ============================================================
+st.markdown('<div class="mf-home-row">', unsafe_allow_html=True)
+_home_spacer, _home_col = st.columns([8, 1])
+with _home_col:
+    if st.button("🏠 Home", key="top_home_modern", use_container_width=True):
+        st.session_state.page = "home"
+        st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
 st.markdown("""
 <div class="mf-app-hero">
   <div class="mf-hero-inner">
-    <div class="mf-wave-mark">∿</div>
     <div>
-      <h1 class="mf-app-title">MagFlow <span>AI</span></h1>
+      <h1 class="mf-app-title">MagFlowAI</h1>
       <p class="mf-app-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
       <p class="mf-app-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control | 2026</p>
     </div>
