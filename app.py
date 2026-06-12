@@ -58,27 +58,101 @@ st.set_page_config(page_title="MagFlow AI — JESA", page_icon="🔧", layout="w
 # ============================================================
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root {
+    --jesa-blue: #0B55D9;
+    --jesa-navy: #102A63;
+    --soft-blue: #EEF6FF;
+    --ink: #1F2937;
+}
+html, body, [class*="css"] {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.block-container {
+    padding-top: 1.1rem;
+    padding-bottom: 2rem;
+    max-width: 1480px;
+}
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F7FBFF 100%);
+    border-right: 1px solid #E6EEF8;
+}
+section[data-testid="stSidebar"] > div {
+    padding-top: 1.4rem;
+}
+section[data-testid="stSidebar"] img {
+    margin: 0 auto 1.3rem auto;
+    display: block;
+}
+section[data-testid="stSidebar"] hr {
+    margin: 1.1rem 0;
+}
+section[data-testid="stSidebar"] h3 {
+    color: var(--ink);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
 /* Tab bar: bigger, clearer labels spread across the full page width (note 13) */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
+    gap: 10px;
     display: flex;
     width: 100%;
+    background: rgba(255,255,255,0.75);
+    border: 1px solid #E4ECF7;
+    border-radius: 18px;
+    padding: 8px;
+    box-shadow: 0 10px 28px rgba(16,42,99,0.06);
 }
 .stTabs [data-baseweb="tab"] {
     flex: 1 1 0;
     justify-content: center;
     text-align: center;
+    border-radius: 14px;
+    color: #5C6B84;
+    min-height: 52px;
 }
 .stTabs [data-baseweb="tab"] p {
     font-size: 16px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, #EAF3FF 0%, #FFFFFF 100%);
+    box-shadow: inset 0 -3px 0 var(--jesa-blue);
+}
+.stTabs [aria-selected="true"] p {
+    color: var(--jesa-blue) !important;
 }
 /* Soft page background */
-.stApp { background: linear-gradient(180deg, #FBFCFF 0%, #F4F8FD 100%); }
+.stApp { background: radial-gradient(circle at 76% 8%, #E3F1FF 0%, transparent 34%), linear-gradient(180deg, #F8FBFF 0%, #EEF4FA 100%); color: var(--ink); }
 /* Buttons */
 .stButton button, .stDownloadButton button {
-    border-radius: 8px;
-    font-weight: 600;
+    border-radius: 16px;
+    font-weight: 700;
+    border: 1px solid #DDE8F6;
+    min-height: 48px;
+}
+.stButton button[kind="primary"], .stDownloadButton button[kind="primary"] {
+    background: linear-gradient(135deg, #0B55D9 0%, #149AD6 100%) !important;
+    border: none !important;
+    color: white !important;
+    box-shadow: 0 12px 28px rgba(11,85,217,0.22);
+}
+button[data-testid="stBaseButton-primary"] {
+    background: linear-gradient(135deg, #0B55D9 0%, #149AD6 100%) !important;
+    border: none !important;
+    color: white !important;
+    box-shadow: 0 12px 28px rgba(11,85,217,0.22);
+}
+section[data-testid="stSidebar"] .stButton button {
+    background: #EEF5FF;
+    color: var(--jesa-blue);
+    border: 0;
+    justify-content: flex-start;
+    padding-left: 24px;
+    box-shadow: none;
+}
+div[data-baseweb="select"] > div, input, textarea {
+    border-radius: 14px !important;
 }
 /* Landing hero card */
 .mf-hero {
@@ -103,6 +177,84 @@ st.markdown("""
     box-shadow: 0 2px 10px rgba(21,42,74,0.06);
 }
 .mf-step b { color: #1565C0; }
+.mf-app-hero {
+    position: relative;
+    overflow: hidden;
+    min-height: 260px;
+    border-radius: 26px;
+    padding: 56px 52px;
+    margin: 4px 0 28px 0;
+    background:
+        radial-gradient(circle at 18% 45%, rgba(11,85,217,0.12) 0%, transparent 22%),
+        radial-gradient(circle at 84% 12%, rgba(20,154,214,0.18) 0%, transparent 28%),
+        linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(235,245,255,0.92) 100%);
+    border: 1px solid rgba(214,229,247,0.9);
+    box-shadow: 0 18px 48px rgba(16,42,99,0.10);
+}
+.mf-app-hero:after {
+    content: "";
+    position: absolute;
+    right: -90px;
+    bottom: -120px;
+    width: 560px;
+    height: 300px;
+    border-radius: 50%;
+    background: rgba(11,85,217,0.08);
+    transform: rotate(-12deg);
+}
+.mf-hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    text-align: center;
+}
+.mf-wave-mark {
+    width: 170px;
+    height: 104px;
+    border-radius: 52px;
+    background: linear-gradient(135deg, rgba(11,85,217,0.14), rgba(20,154,214,0.22));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0B55D9;
+    font-size: 72px;
+    font-weight: 800;
+    box-shadow: inset 0 0 24px rgba(255,255,255,0.8), 0 16px 35px rgba(11,85,217,0.14);
+}
+.mf-app-title {
+    margin: 0;
+    font-size: clamp(58px, 7vw, 104px);
+    line-height: 0.95;
+    font-weight: 800;
+    letter-spacing: -0.06em;
+    color: var(--jesa-navy);
+}
+.mf-app-title span {
+    color: #16A6DA;
+}
+.mf-app-sub {
+    color: #5A6882;
+    font-size: 19px;
+    font-weight: 700;
+    margin: 18px 0 8px 0;
+}
+.mf-app-meta {
+    color: #7A879C;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+.mf-section-shell {
+    background: rgba(255,255,255,0.72);
+    border: 1px solid #E2ECF8;
+    border-radius: 22px;
+    padding: 18px;
+    box-shadow: 0 14px 36px rgba(16,42,99,0.06);
+    margin-top: 18px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -948,7 +1100,7 @@ def render_landing():
             "<p style='font-size:18px;color:#1565C0;margin-top:2px;font-weight:600'>"
             "AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
             "<p style='font-size:13px;color:#888;margin-top:0'>PFE ENSA — JESA (OCP × Worley) · "
-            "Instrumentation & Control · Developed by Maroua Hakkak — 2026</p>",
+            "Instrumentation & Control · 2026</p>",
             unsafe_allow_html=True)
 
     # Hero image
@@ -1047,8 +1199,8 @@ if st.session_state.page == "home":
 # ============================================================
 with st.sidebar:
     if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
-        st.image(IMG_JESA_LOGO, width=130)
-    if st.button("🏠 Home", use_container_width=True):
+        st.image(IMG_JESA_LOGO, width=155)
+    if st.button("🏠  Home", use_container_width=True):
         st.session_state.page = "home"
         st.rerun()
     st.divider()
@@ -1056,10 +1208,10 @@ with st.sidebar:
     lang_options = {"🇫🇷 French": "fr-FR", "🇬🇧 English": "en-US", "🇸🇦 Arabic": "ar-SA", "🇪🇸 Spanish": "es-ES"}
     selected_lang = st.selectbox("Voice language", list(lang_options.keys()), label_visibility="collapsed")
     lang_code = lang_options[selected_lang]
-    voice_html = f"""<div style="display:flex;gap:8px;align-items:center">
-    <button id="voiceBtn" onclick="startVoice()" style="background:#1B2A4A;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px">🎤 Tap to speak</button>
-    <button id="sendBtn" onclick="sendVoice()" style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;display:none">📤 Send</button>
-    <span id="status" style="font-size:12px;color:#666"></span></div>
+    voice_html = f"""<div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+    <button id="voiceBtn" onclick="startVoice()" style="background:#1B2A4A;color:white;border:none;padding:10px 18px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:700">🎤 Tap to speak</button>
+    <button id="sendBtn" onclick="sendVoice()" style="background:#0B55D9;color:white;border:none;padding:10px 18px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:700;display:none">📤 Send</button>
+    <span id="status" style="font-size:12px;color:#667085"></span></div>
     <script>
     let recognition=null,transcript='';
     function startVoice(){{
@@ -1106,45 +1258,19 @@ with st.sidebar:
 
 # ============================================================
 #  APP HEADER + TABS  (Dashboard moved to LAST)
-#  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
-# Top row: JESA logo (top-left, bigger) + discreet Home button (top-right)
-htop1, htop2 = st.columns([3, 1])
-with htop1:
-    if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
-        st.image(IMG_JESA_LOGO, width=160)
-with htop2:
-    st.write("")
-    if st.button("🏠 Home", key="title_home"):
-        st.session_state.page = "home"
-        st.rerun()
-
-# Centered big MagFlow AI title + description
-st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&display=swap');
-.mf-header {{ text-align:center; margin-top:4px; }}
-.mf-title {{
-    font-family:'Comfortaa',cursive;
-    font-weight:700;
-    font-size:74px;
-    background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
-    -webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
-    background-clip:text;
-    margin:0;
-    line-height:1.15;
-}}
-.mf-sub {{ font-size:19px;color:#444;margin:10px 0 0 0;font-weight:600; }}
-.mf-meta {{ font-size:13px;color:#999;margin:4px 0 0 0; }}
-</style>
-<div class="mf-header">
-    <p class="mf-title">🔧 MagFlow AI</p>
-    <p class="mf-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
-    <p class="mf-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control · Developed by Maroua Hakkak — 2026</p>
+st.markdown("""
+<div class="mf-app-hero">
+  <div class="mf-hero-inner">
+    <div class="mf-wave-mark">∿</div>
+    <div>
+      <h1 class="mf-app-title">MagFlow <span>AI</span></h1>
+      <p class="mf-app-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
+      <p class="mf-app-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control | 2026</p>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
-st.divider()
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
 mt_reco, mt_hist, mt_import, mt_dash = st.tabs(
