@@ -478,8 +478,8 @@ def _week_date(month_name, week_num, year):
 
 def extract_interventions_from_checklist(uploaded_file, tag, year=None):
     """Read the filled checklist and return a list of intervention dicts.
-    Dated tasks (monthly/quarterly/...) that are filled -> intervention.
-    Continuous tasks -> intervention only if Status is Non-conform."""
+    Any task marked Done? = Yes becomes an intervention. Older files with the
+    previous checkbox/status layout are still supported."""
     if year is None:
         year = datetime.now().year
     try:
@@ -524,18 +524,33 @@ def extract_interventions_from_checklist(uploaded_file, tag, year=None):
                     status = ws.cell(row=r, column=11 if new_format else 10).value
                     tech = ws.cell(row=r, column=12 if new_format else 11).value
                     done = ws.cell(row=r, column=10).value if new_format else status
-                    if _is_done(done) and _is_nonconform(status):
+                    work = ws.cell(row=r, column=14).value if new_format else ""
+                    day_marks = []
+                    if new_format:
+                        for col, day in [(3,"Mon"),(4,"Tue"),(5,"Wed"),(6,"Thu"),(7,"Fri"),(8,"Sat"),(9,"Sun")]:
+                            val = ws.cell(row=r, column=col).value
+                            if val is not None and str(val).strip():
+                                day_marks.append(f"{day}: {val}")
+                    has_continuous_data = any([
+                        _is_done(done),
+                        status is not None and str(status).strip(),
+                        tech is not None and str(tech).strip(),
+                        work is not None and str(work).strip(),
+                        bool(day_marks),
+                    ])
+                    if has_continuous_data or (not new_format and _is_nonconform(status)):
                         interventions.append({
                             "date": _week_date(current_month, week_num, year),
                             "tag": tag, "type": "Checklist task", "task": task,
-                            "result": str(status).strip(), "tech": str(tech or "").strip(), "notes": ""})
+                            "result": str(status or "Conform").strip(), "tech": str(tech or "").strip(),
+                            "notes": " | ".join([str(work or "").strip()] + day_marks).strip(" |")})
                 else:
                     done = ws.cell(row=r, column=10).value if new_format else None
                     result = ws.cell(row=r, column=11).value if new_format else "Conform"
                     tech = ws.cell(row=r, column=12 if new_format else 11).value
                     date = ws.cell(row=r, column=13 if new_format else 10).value
                     work = ws.cell(row=r, column=14 if new_format else 12).value
-                    if _is_done(done) or (date and str(date).strip()) or (tech and str(tech).strip()) or (work and str(work).strip()):
+                    if _is_done(done) or (result and str(result).strip()) or (date and str(date).strip()) or (tech and str(tech).strip()) or (work and str(work).strip()):
                         interventions.append({
                             "date": str(date).strip() if date else "",
                             "tag": tag, "type": "Checklist task", "task": task,
@@ -1319,8 +1334,8 @@ with mt_hist:
     st.markdown("Log and track all maintenance interventions for each flowmeter across JESA/OCP projects.")
     with st.expander("📥 Import from Maintenance Excel (Historical Data sheet)", expanded=False):
         st.markdown("Upload a filled MagFlow AI maintenance Excel. Enter the **tag** below, then import. "
-                    "The app will: (1) save the **Historical Data** rows, (2) auto-create interventions from the "
-                    "**filled checklist** (dated tasks, plus any non-conform continuous checks), and (3) remember the "
+                    "The app will: (1) save the **Historical Data** rows, (2) auto-create interventions from every "
+                    "**filled checklist task**, and (3) remember the "
                     "checklist so it stays pre-filled when you re-download it for the same tag.")
         uploaded_excel = st.file_uploader("Upload Excel file", type=["xlsx"], key="excel_import")
         if uploaded_excel:
@@ -1330,6 +1345,7 @@ with mt_hist:
                     count, error = import_from_excel(uploaded_excel)
                     chk_saved = 0
                     auto_interv = 0
+                    detected_interv = 0
                     if imp_tag.strip():
                         # 1) remember the filled checklist cells (for pre-fill on re-download)
                         try:
@@ -1344,13 +1360,16 @@ with mt_hist:
                         except Exception:
                             pass
                         interv = extract_interventions_from_checklist(uploaded_excel, imp_tag.strip())
+                        detected_interv = len(interv)
                         auto_interv = save_interventions_dedup(interv)
                 if error: st.error(f"❌ Import failed: {error}")
-                elif count == 0 and chk_saved == 0 and auto_interv == 0: st.warning("⚠️ No valid rows found.")
+                elif count == 0 and chk_saved == 0 and auto_interv == 0 and detected_interv == 0: st.warning("⚠️ No valid rows found.")
                 else:
                     parts = []
                     if count: parts.append(f"{count} row(s) from Historical Data")
                     if auto_interv: parts.append(f"{auto_interv} intervention(s) auto-created from checklist")
+                    elif imp_tag.strip() and detected_interv:
+                        parts.append(f"{detected_interv} checklist intervention(s) detected but not added (already saved or Google Sheets write failed)")
                     if chk_saved: parts.append(f"{chk_saved} checklist cell(s) saved for pre-fill")
                     st.success("✅ " + " · ".join(parts) if parts else "✅ Done")
                     st.balloons()
