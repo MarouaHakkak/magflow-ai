@@ -1,7 +1,69 @@
-"""MagFlow AI v3 — Core Engine"""
-import openpyxl, math
+"""MagFlow AI v4 — Core Engine with smarter matching and explainability"""
+import openpyxl, math, re
+from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
+
+INVALID_VALUES = {"", "-", "—", "N/A", "NA", "NONE", "NULL", "VTA", "TBD", "UNKNOWN", "NOT APPLICABLE"}
+
+TEXT_ALIASES = {
+    "seawater": "sea water",
+    "sea water": "sea water",
+    "phophoric acid": "phosphoric acid",
+    "phosporic acid": "phosphoric acid",
+    "phosphoricacid": "phosphoric acid",
+    "sulphuric acid": "sulfuric acid",
+    "caustic soda": "sodium hydroxide",
+    "naoh": "sodium hydroxide",
+    "hcl": "hydrochloric acid",
+    "pt": "platinum",
+    "ptir": "platinum",
+    "pt ir": "platinum",
+    "316 ss": "316 stainless steel",
+    "316l ss": "316l stainless steel",
+    "904l ss": "904l stainless steel",
+    "ss316": "316 stainless steel",
+    "ss316l": "316l stainless steel",
+    "ss904l": "904l stainless steel",
+}
+
+def clean_text(value):
+    if value is None:
+        return ""
+    text = re.sub(r"\s+", " ", str(value).replace("\n", " ")).strip()
+    return "" if text.upper() in INVALID_VALUES else text
+
+def norm_text(value):
+    text = clean_text(value).lower()
+    if not text:
+        return ""
+    text = text.replace("&", " and ")
+    text = re.sub(r"\bphophoric\b|\bphosporic\b", "phosphoric", text)
+    text = re.sub(r"\bstainless\s+steel\b", "ss", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text)
+    compact = text.replace(" ", "")
+    return TEXT_ALIASES.get(text, TEXT_ALIASES.get(compact, compact))
+
+def similarity(a, b):
+    ak, bk = norm_text(a), norm_text(b)
+    if not ak or not bk:
+        return 0.0
+    if ak == bk:
+        return 1.0
+    if ak in bk or bk in ak:
+        return 0.94
+    return SequenceMatcher(None, ak, bk).ratio()
+
+def infer_category(text):
+    t = norm_text(text)
+    if any(k in t for k in ["slurry", "mud", "pulp", "solid", "abrasive", "phosphate rock"]):
+        return "Abrasive"
+    if any(k in t for k in ["acid", "hcl", "sulfuric", "phosphoric", "hydroxide", "caustic", "corrosive"]):
+        return "Corrosive"
+    if any(k in t for k in ["charged", "conductive", "brine", "sea water", "seawater"]):
+        return "Charged"
+    return "Clean"
 
 class DataLoader:
     def __init__(self, filepath):
@@ -69,33 +131,6 @@ class DataLoader:
             if p and f and not any(k in p for k in ['LEGEND','NOTE','NOTES']):
                 projects.append({'project':p,'tag':self._s(row[1]),'fluid':f,'type':self._s(row[3]) if len(row)>3 else '','electrode':self._s(row[6]) if len(row)>6 else '','liner':self._s(row[7]) if len(row)>7 else '','grounding':self._s(row[8]) if len(row)>8 else '','tube':self._s(row[13]) if len(row)>13 else ''})
         return projects
-
-    def merge_gsheet_projects(self, gsheet_records):
-        """Merge Google Sheets Project Data records into project_data."""
-        existing_tags = {p.get('tag','') for p in self.project_data}
-        added = 0
-        for r in gsheet_records:
-            tag = str(r.get('Tag', '') or '').strip()
-            fluid = str(r.get('Fluid', '') or '').strip()
-            project = str(r.get('Project', '') or '').strip()
-            electrode = str(r.get('Electrode', '') or '').strip()
-            liner = str(r.get('Liner', '') or '').strip()
-            grounding = str(r.get('Grounding', '') or '').strip()
-            tube = str(r.get('Tube', '') or '').strip()
-            if tag and fluid and tag not in existing_tags:
-                self.project_data.append({
-                    'project': project,
-                    'tag': tag,
-                    'fluid': fluid,
-                    'type': 'Imported',
-                    'electrode': electrode,
-                    'liner': liner,
-                    'grounding': grounding,
-                    'tube': tube
-                })
-                existing_tags.add(tag)
-                added += 1
-        return added
     def get_asme_pressure(self, cls, temp):
         if cls not in self.asme: return None
         t = self.asme[cls]; temps = sorted(t.keys())
@@ -121,20 +156,23 @@ class ProcessInput:
 class ValidationResult:
     is_valid:bool=True; fluid_found:bool=False; fluid_data:Optional[Dict]=None
     fluid_category:str=''; velocity:float=0.0; recommended_dn:int=0
+    confidence:int=100; matched_fluid:str=''; match_score:int=0
     errors:List[str]=field(default_factory=list); warnings:List[str]=field(default_factory=list)
+    reasons:List[str]=field(default_factory=list)
 
 @dataclass
 class MaterialResult:
     electrode:str=''; electrode_alt:List[str]=field(default_factory=list); electrode_cost:str=''; electrode_avail:str='Standard'
     liner:str=''; liner_alt:List[str]=field(default_factory=list); liner_cost:str=''; liner_avail:str='Standard'; liner_dn_warning:str=''
     grounding:str=''; penetrant:str=''; o_ring:str=''; flange_coat:str=''; tube_warning:str=''
+    confidence:int=100; reasons:List[str]=field(default_factory=list)
     warnings:List[str]=field(default_factory=list); remarks:str=''
 
 @dataclass
 class VendorRec:
     vendor:str=''; model:str=''; accuracy:str=''; pressure:str=''; protocols:str=''; diagnostics:str=''
     pipe_sizes:str=''; excitation:str=''; ip:str=''; notes:str=''; capex_score:int=3
-    compatible:bool=True; reason:str=''; model_type:str=''; special_order:bool=False
+    compatible:bool=True; reason:str=''; model_type:str=''; special_order:bool=False; confidence:int=100
 
 @dataclass
 class DriftRisk:
@@ -159,14 +197,17 @@ class TCOResult:
     liner_life:str=''; electrode_life:str=''; drift_risks:List[DriftRisk]=field(default_factory=list)
     maintenance:MaintenancePlan=field(default_factory=MaintenancePlan)
     validation:List[ProjectMatch]=field(default_factory=list); notes_response:str=''; pressure_check:str=''
+    confidence:int=100; reasoning:List[str]=field(default_factory=list)
 
 def mat_match(needle, haystack):
-    n, h = needle.lower().strip(), haystack.lower()
+    n, h = norm_text(needle), norm_text(haystack)
     if not n or not h: return False
-    if n in h: return True
-    aliases = {'monel 400':['monel'],'monel':['monel 400'],'hastelloy c-4':['hastelloy c4','hast c-4'],'hastelloy c-276':['c-276','c276'],'hastelloy c':['hastelloy'],'alloy c22':['c22','alloy c-22'],'conductive rubber':['conductive'],'platinum':['platinum','pt-ir','pt/ir','80%pt'],'platinum / pt-ir':['platinum'],'soft rubber':['soft rubber','natural rubber'],'hard rubber':['hard rubber','ebonite'],'pfa':['pfa'],'ptfe':['ptfe'],'neoprene':['neoprene'],'linatex':['linatex'],'ceramic':['ceramic','al2o3'],'polyurethane':['polyurethane','pu'],'316l':['316l','316'],'tantalum':['tantalum'],'titanium':['titanium'],'tungsten carbide':['tungsten'],'316 ti':['316 ti','316ti']}
+    if n == h or n in h or h in n: return True
+    aliases = {'monel 400':['monel'],'monel':['monel 400'],'hastelloy c-4':['hastelloy c4','hast c-4'],'hastelloy c-276':['c-276','c276'],'hastelloy c':['hastelloy'],'alloy c22':['c22','alloy c-22'],'conductive rubber':['conductive'],'platinum':['platinum','pt-ir','pt/ir','80%pt','pt'],'platinum / pt-ir':['platinum'],'soft rubber':['soft rubber','natural rubber'],'hard rubber':['hard rubber','ebonite'],'pfa':['pfa'],'ptfe':['ptfe'],'neoprene':['neoprene'],'linatex':['linatex'],'ceramic':['ceramic','al2o3'],'polyurethane':['polyurethane','pu'],'316l':['316l','316'],'tantalum':['tantalum'],'titanium':['titanium'],'tungsten carbide':['tungsten'],'316 ti':['316 ti','316ti']}
     for a in aliases.get(n,[]) + [n]:
-        if a in h: return True
+        if norm_text(a) in h: return True
+    if SequenceMatcher(None, n, h).ratio() >= 0.90:
+        return True
     return False
 
 def get_cost(capex, mat):
@@ -176,9 +217,12 @@ def get_cost(capex, mat):
     return '?', 3
 
 def get_category(ft):
-    ft = ft.lower()
-    if 'abrasive' in ft: return 'Abrasive'
-    if any(k in ft for k in ['corrosive','acid']): return 'Corrosive'
+    ft = clean_text(ft).lower()
+    if not ft:
+        return 'Unknown'
+    if 'abrasive' in ft or 'slurry' in ft: return 'Abrasive'
+    if any(k in ft for k in ['corrosive','acid','caustic','hydroxide']): return 'Corrosive'
+    if any(k in ft for k in ['charged','conductive','brine']): return 'Charged'
     return 'Clean'
 
 def is_conductive(pipe_mat, pipe_liner):
@@ -197,9 +241,19 @@ class Layer1:
     def __init__(self, data): self.data = data
     def validate(self, inp):
         r = ValidationResult()
-        fluid = self._find(inp.fluid_name)
-        if fluid: r.fluid_found=True; r.fluid_data=fluid; r.fluid_category=get_category(fluid.get('type',''))
-        else: r.warnings.append(f"Fluid '{inp.fluid_name}' not in database. Closest: {self._suggest(inp.fluid_name)}"); r.fluid_category='Unknown'
+        fluid, match_score = self._find(inp.fluid_name)
+        if fluid:
+            r.fluid_found=True; r.fluid_data=fluid; r.fluid_category=get_category(f"{fluid.get('type','')} {fluid.get('name','')}")
+            r.matched_fluid = fluid.get('name',''); r.match_score = int(match_score * 100)
+            if match_score < 1:
+                r.confidence = min(r.confidence, max(70, int(match_score * 100)))
+                r.warnings.append(f"Fluid '{inp.fluid_name}' matched to database fluid '{fluid.get('name','')}' ({int(match_score*100)}%).")
+            r.reasons.append(f"Fluid category resolved as {r.fluid_category}.")
+        else:
+            r.fluid_category = infer_category(inp.fluid_name)
+            r.confidence = 45
+            r.warnings.append(f"Fluid '{inp.fluid_name}' not in database. Closest: {self._suggest(inp.fluid_name)}")
+            r.warnings.append(f"Provisional category inferred as {r.fluid_category}. Materials require engineering validation.")
         if inp.conductivity < 5.0: r.is_valid=False; r.errors.append(f"Conductivity {inp.conductivity} µS/cm < 5 µS/cm. Magflow NOT suitable.")
         if inp.dn > 0 and inp.flow_max > 0:
             area = math.pi*(inp.dn/2000.0)**2; r.velocity = round((inp.flow_max/3600.0)/area, 2)
@@ -217,15 +271,20 @@ class Layer1:
         if fluid and 'demin' in fluid.get('name','').lower(): r.warnings.append("Demineralized water may drop below 5 µS/cm.")
         return r
     def _find(self, name):
-        nl = name.lower().strip()
+        nl = norm_text(name)
+        best = (None, 0.0)
         for f in self.data.fluids:
-            if f['name'].lower() == nl: return f
+            if norm_text(f['name']) == nl: return f, 1.0
         for f in self.data.fluids:
-            if nl in f['name'].lower() or f['name'].lower() in nl: return f
-        return None
+            score = similarity(name, f['name'])
+            if score > best[1]:
+                best = (f, score)
+        if best[1] >= 0.86:
+            return best
+        return None, 0.0
     def _suggest(self, name):
-        nl = name.lower(); m = sorted([(len(set(nl.split())&set(f['name'].lower().split())),f['name']) for f in self.data.fluids], reverse=True)
-        return ', '.join(x[1] for x in m[:3] if x[0]>0) or 'None'
+        m = sorted([(similarity(name, f['name']),f['name']) for f in self.data.fluids], reverse=True)
+        return ', '.join(x[1] for x in m[:3] if x[0]>=0.45) or 'None'
 
 class Layer2:
     def __init__(self, data): self.data = data
@@ -233,7 +292,14 @@ class Layer2:
         r = MaterialResult()
         opts = [e.strip() for e in fluid.get('electrode','').replace(' ou ','/').replace(' or ','/').split('/') if e.strip()]
         r.electrode = opts[0] if opts else ''; r.electrode_alt = opts[1:] if len(opts)>1 else []
-        if len(opts)>1: r.warnings.append(f"Multiple electrode options: {', '.join(opts)}. Depends on client requirements.")
+        if r.electrode:
+            r.reasons.append(f"Electrode selected from fluid-material matrix: {r.electrode}.")
+        else:
+            r.confidence -= 35
+            r.warnings.append("No electrode rule found for this fluid.")
+        if len(opts)>1:
+            r.confidence -= 8
+            r.warnings.append(f"Multiple electrode options: {', '.join(opts)}. Depends on client requirements.")
         r.electrode_cost, _ = get_cost(self.data.capex_scores, r.electrode)
         for e in self.data.electrodes:
             if mat_match(r.electrode, e['name']): r.electrode_avail = e.get('availability','Standard'); break
@@ -241,20 +307,30 @@ class Layer2:
         liner_opts = [l.strip() for l in fluid.get('liner','').replace(' ou ','/').replace(' or ','/').split('/') if l.strip()]
         if len(liner_opts)>1: r.liner = self._pick_liner(liner_opts, dt, inp.dn); r.liner_alt = [l for l in liner_opts if l!=r.liner]
         else: r.liner = liner_opts[0] if liner_opts else ''
+        if r.liner:
+            r.reasons.append(f"Liner selected from fluid-material matrix: {r.liner}.")
+        else:
+            r.confidence -= 35
+            r.warnings.append("No liner rule found for this fluid.")
         r.liner_cost, _ = get_cost(self.data.capex_scores, r.liner)
         for li in self.data.liners:
             if mat_match(r.liner, li['name']): r.liner_avail = li.get('availability','Standard'); break
         for vn in ['E+H','Emerson','Krohne']:
             dl = self.data.get_liner_dn_limit(r.liner, vn)
             if dl and inp.dn > dl: r.liner_dn_warning += f"{r.liner} not available above DN {dl} at {vn}. "
-        if r.liner_dn_warning: r.warnings.append(f"DN limitation: {r.liner_dn_warning}PTFE recommended for large DN.")
+        if r.liner_dn_warning:
+            r.confidence -= 12
+            r.warnings.append(f"DN limitation: {r.liner_dn_warning}PTFE recommended for large DN.")
         cond = is_conductive(inp.pipe_material, inp.pipe_liner); gs = fluid.get('grounding','')
         r.grounding = gs if not cond and gs and 'strap' not in gs.lower() else ('Grounding strap (conductive pipe)' if cond else f"Required — non-conductive pipe ({inp.pipe_material})")
+        r.reasons.append(f"Grounding rule based on pipe conductivity: {r.grounding}.")
         r.penetrant = fluid.get('penetrant','N/A')
         if 'abrasive' in fluid.get('type','').lower() and r.penetrant in ['N/A','']: r.penetrant = 'Recommended (abrasive fluid)'; r.warnings.append("Abrasive fluid — penetrant ring recommended.")
         r.o_ring = fluid.get('o_ring',''); r.flange_coat = fluid.get('flange_coat',''); r.remarks = fluid.get('remarks','')
         if inp.tube_material in ['SS 304','SS 304L'] and get_category(fluid.get('type','')) in ['Corrosive','Abrasive']:
             r.tube_warning = f"{inp.tube_material} acceptable (liner protects tube). Cost saving with client approval."
+            r.confidence -= 5
+        r.confidence = max(0, min(100, r.confidence))
         return r
     def _pick_liner(self, opts, temp, dn):
         if 'Soft rubber' in opts and temp <= 60: return 'Soft rubber'
@@ -269,6 +345,7 @@ class Layer3:
     def __init__(self, data): self.data = data
     def select(self, inp, mat, fluid_data=None):
         compatible = []; cat = get_category((fluid_data or {}).get('type',''))
+        rejected = []
         for m in self.data.vendor_models:
             rec = VendorRec(vendor=m['vendor'],model=m['model'],accuracy=m['accuracy'],pressure=m['pressure_std'],protocols=m['protocols'],diagnostics=m['diagnostics'],pipe_sizes=m['pipe_sizes'],excitation=m['excitation'],ip=m['ip'],notes=m.get('notes',''),model_type=m.get('type',''))
             mt = m.get('type','').lower()
@@ -296,8 +373,12 @@ class Layer3:
                     max_p = self.data.get_asme_pressure(cls, dt2)
                     if max_p and inp.pressure_design > max_p: rec.compatible=False; rec.reason=f"Pressure {inp.pressure_design} bar > {max_p} bar (Class {cls} at {dt2}°C)"
             rec.capex_score = self.data.capex_scores.get(m['model'], 3)
-            if rec.compatible: compatible.append(rec)
-        result = {'all':compatible,'emerson':None,'eh':None,'krohne':None,'extra':self.EXTRA,'warnings':[]}
+            if rec.compatible:
+                rec.confidence = 88 if rec.special_order else 100
+                compatible.append(rec)
+            elif rec.reason:
+                rejected.append({'vendor': rec.vendor, 'model': rec.model, 'reason': rec.reason})
+        result = {'all':compatible,'emerson':None,'eh':None,'krohne':None,'extra':self.EXTRA,'warnings':[], 'rejected': rejected[:20]}
         for vk, attr in [('Emerson','emerson'),('Endress+Hauser','eh'),('Krohne','krohne')]:
             vm = [c for c in compatible if c.vendor==vk]
             if vm:
@@ -338,7 +419,20 @@ class Layer4:
         _,es = get_cost(self.data.capex_scores, mat.electrode); _,ls = get_cost(self.data.capex_scores, mat.liner)
         vs = vendor.capex_score if vendor else 3; gs = 1 if 'strap' in mat.grounding.lower() else 3
         r.capex_score = es+ls+vs+gs+1; r.breakdown = {'Electrode':es,'Liner':ls,'Model':vs,'Grounding':gs,'Accessories':1}
-        r.calib_months = 6 if cat=='Abrasive' else (12 if cat=='Corrosive' else 24)
+        r.calib_months = 6 if cat=='Abrasive' else (12 if cat in ['Corrosive','Charged'] else 24)
+        if inp.flow_max > 0 and inp.dn > 0:
+            area = math.pi*(inp.dn/2000.0)**2
+            velocity = (inp.flow_max/3600.0)/area
+            if velocity > 3 and cat == 'Abrasive':
+                r.calib_months = min(r.calib_months, 3)
+                r.reasoning.append("High abrasive velocity: calibration interval tightened to 3 months.")
+            elif velocity > 8:
+                r.calib_months = min(r.calib_months, 12)
+                r.reasoning.append("High velocity: calibration interval capped at 12 months.")
+        if 5 <= inp.conductivity < 20:
+            r.calib_months = min(r.calib_months, 12)
+            r.confidence -= 10
+            r.reasoning.append("Low conductivity margin: diagnostic and calibration follow-up should be closer.")
         life = {'Abrasive':('3-5 years','5-10 years'),'Corrosive':('8-12 years','12-18 years'),'Clean':('15-20 years','20+ years')}
         r.liner_life, r.electrode_life = life.get(cat, ('10-15 years','15-20 years'))
         if vendor and inp.pressure_design > 0:
@@ -350,6 +444,10 @@ class Layer4:
         r.maintenance = self._maint(cat, r.calib_months, vendor, mat)
         r.validation = self._validate(inp, mat, fluid)
         if inp.special_conditions or inp.user_notes: r.notes_response = self._notes(inp, mat, vendor, cat)
+        if not vendor:
+            r.confidence -= 25
+            r.reasoning.append("No preferred vendor model was selected; TCO is provisional.")
+        r.confidence = max(0, min(100, r.confidence))
         return r
     def _extract_class(self, ps):
         if not ps: return None
@@ -389,6 +487,7 @@ class Layer4:
         m.monthly = ['Check HART/diagnostic alarms in DCS','Verify transmitter display — no error codes']
         m.quarterly = ['Visual inspection — corrosion, cables','Cable gland tightness — IP integrity','Junction box moisture check']
         if cat=='Abrasive': m.semi_annual = ['Liner inspection via noise trend','Penetrant ring check','Electrode resistance check','Re-zero if needed']
+        if cat=='Charged': m.quarterly.append('Verify grounding stability and process noise trend')
         m.annual = [f'Calibration verification (every {cm} months)','Grounding verification (<1 Ohm)','Electrode resistance vs baseline','O-ring inspection','Electrical connections check']
         if 'heartbeat' in d or 'smart meter' in d: m.annual.append(f'Extended calibration: every {cm*2} months with diagnostic verification')
         m.multi_year = ['O-ring replacement (every 3-5 years)','Full bench calibration (every 3-5 years)','Liner evaluation — visual inspection','Grounding ring condition check']
@@ -396,22 +495,35 @@ class Layer4:
         return m
     def _el(self, cat): return '5-10 years' if cat=='Abrasive' else ('12-18 years' if cat=='Corrosive' else '20+ years')
     def _validate(self, inp, mat, fluid):
-        matches = []; fn = inp.fluid_name.lower()
+        matches = []; fn = inp.fluid_name
         for p in self.data.project_data:
-            pf = p.get('fluid','').lower()
-            if fn in pf or pf in fn:
-                det = {}; conf = 100; expl = ''; cost = ''
+            pf = p.get('fluid','')
+            fluid_score = similarity(fn, pf)
+            if fluid_score >= 0.60:
+                det = {'Fluid': f"{pf} ({int(fluid_score*100)}% name match)"}
+                conf = int(fluid_score * 55)
+                expl = ''; cost = ''
                 pe, pl, pt = p.get('electrode',''), p.get('liner',''), p.get('tube','')
-                if mat_match(mat.electrode, pe): det['Electrode'] = f"{pe} ✓"
+                if mat_match(mat.electrode, pe):
+                    det['Electrode'] = f"{pe} ✓"
+                    conf += 20
                 elif pe:
                     det['Electrode'] = f"Project: {pe} | Model: {mat.electrode}"; conf -= 20
                     c1,s1 = get_cost(self.data.capex_scores,pe); c2,s2 = get_cost(self.data.capex_scores,mat.electrode)
                     expl = f"Project used {pe} ({c1}), model recommends {mat.electrode} ({c2})."; cost = f"{pe} ({c1}) vs {mat.electrode} ({c2})"
-                if mat_match(mat.liner, pl): det['Liner'] = f"{pl} ✓"
+                if mat_match(mat.liner, pl):
+                    det['Liner'] = f"{pl} ✓"
+                    conf += 15
                 elif pl: det['Liner'] = f"Project: {pl} | Model: {mat.liner}"; conf -= 10
                 if pt and pt!='N/A':
-                    if mat_match(inp.tube_material, pt): det['Tube'] = f"{pt} ✓"
+                    if mat_match(inp.tube_material, pt):
+                        det['Tube'] = f"{pt} ✓"
+                        conf += 5
                     else: det['Tube'] = f"Project: {pt} | Selected: {inp.tube_material}"; conf -= 5
+                if p.get('type') and fluid.get('type') and get_category(p.get('type')) == get_category(fluid.get('type')):
+                    det['Category'] = f"{get_category(p.get('type'))} ✓"
+                    conf += 5
+                conf = max(0, min(100, conf))
                 mt = '✓ MATCH' if conf>=80 else ('⚠ PARTIAL' if conf>=50 else '✗ DIFFERS')
                 matches.append(ProjectMatch(p['project'],p['fluid'],mt,max(conf,0),det,expl,cost))
         matches.sort(key=lambda x:-x.confidence); return matches[:8]
