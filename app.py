@@ -5,6 +5,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 import io
 import json
 import gspread
@@ -262,12 +263,14 @@ def read_checklist_from_excel(uploaded_file, tag):
                 mode = "dated"
                 continue
             task = ws.cell(row=r, column=2).value
-            if a_str == "☐" and task and current_period:
+            is_task_row = bool(task and current_period and (a_str == "☐" or a_str.isdigit() or a_str == "•"))
+            if is_task_row:
                 task = str(task).strip()
                 if mode == "continuous":
-                    cols = [(3,"Mon"),(4,"Tue"),(5,"Wed"),(6,"Thu"),(7,"Fri"),(8,"Sat"),(9,"Sun"),(10,"Status"),(11,"Technician")]
+                    cols = [(3,"Mon"),(4,"Tue"),(5,"Wed"),(6,"Thu"),(7,"Fri"),(8,"Sat"),(9,"Sun"),
+                            (10,"Done?"),(11,"Result"),(12,"Technician"),(15,"Validation")]
                 else:
-                    cols = [(10,"Date"),(11,"Technician"),(12,"Work done")]
+                    cols = [(10,"Done?"),(11,"Result"),(12,"Technician"),(13,"Date"),(14,"Work done"),(15,"Validation")]
                 for col, lab in cols:
                     val = ws.cell(row=r, column=col).value
                     if val is not None and str(val).strip() != "":
@@ -287,6 +290,11 @@ def _is_nonconform(val):
         return False
     v = str(val).strip().lower()
     return v in ("nc","non-conform","nonconform","non conform","not ok","ko","fail","failed","non conforme","non-conforme")
+
+def _is_done(val):
+    if not val:
+        return False
+    return str(val).strip().lower() in ("yes", "oui", "done", "fait", "x", "true", "1")
 
 def _week_date(month_name, week_num, year):
     mi = _MONTHS_IDX.get(month_name)
@@ -335,25 +343,30 @@ def extract_interventions_from_checklist(uploaded_file, tag, year=None):
             if "COMPONENT REPLACEMENT" in a_str:
                 mode = "dated"; continue
             task = ws.cell(row=r, column=2).value
-            if a_str == "☐" and task:  # checkbox + task name
+            is_task_row = bool(task and (a_str == "☐" or a_str.isdigit() or a_str == "•"))
+            if is_task_row:
                 task = str(task).strip()
+                new_format = a_str != "☐"
                 if mode == "continuous":
-                    status = ws.cell(row=r, column=10).value
-                    tech = ws.cell(row=r, column=11).value
-                    if _is_nonconform(status):
+                    status = ws.cell(row=r, column=11 if new_format else 10).value
+                    tech = ws.cell(row=r, column=12 if new_format else 11).value
+                    done = ws.cell(row=r, column=10).value if new_format else status
+                    if _is_done(done) and _is_nonconform(status):
                         interventions.append({
                             "date": _week_date(current_month, week_num, year),
                             "tag": tag, "type": "Checklist task", "task": task,
                             "result": str(status).strip(), "tech": str(tech or "").strip(), "notes": ""})
                 else:
-                    date = ws.cell(row=r, column=10).value
-                    tech = ws.cell(row=r, column=11).value
-                    work = ws.cell(row=r, column=12).value
-                    if (date and str(date).strip()) or (tech and str(tech).strip()) or (work and str(work).strip()):
+                    done = ws.cell(row=r, column=10).value if new_format else None
+                    result = ws.cell(row=r, column=11).value if new_format else "Conform"
+                    tech = ws.cell(row=r, column=12 if new_format else 11).value
+                    date = ws.cell(row=r, column=13 if new_format else 10).value
+                    work = ws.cell(row=r, column=14 if new_format else 12).value
+                    if _is_done(done) or (date and str(date).strip()) or (tech and str(tech).strip()) or (work and str(work).strip()):
                         interventions.append({
                             "date": str(date).strip() if date else "",
                             "tag": tag, "type": "Checklist task", "task": task,
-                            "result": "Conform", "tech": str(tech or "").strip(),
+                            "result": str(result or "Conform").strip(), "tech": str(tech or "").strip(),
                             "notes": str(work or "").strip()})
         return interventions
     except Exception:
@@ -697,30 +710,102 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
         ws1[f'A{row}'] = "Frequency:"; ws1[f'A{row}'].font = Font(bold=True)
         ws1[f'B{row}'] = risk.frequency; row += 2
     ws2 = wb.create_sheet("Maintenance Checklist")
-    ws2.column_dimensions['A'].width = 5; ws2.column_dimensions['B'].width = 45
-    for col in range(3, 10): ws2.column_dimensions[get_column_letter(col)].width = 10
-    ws2.column_dimensions['J'].width = 15; ws2.column_dimensions['K'].width = 20; ws2.column_dimensions['L'].width = 40
-    ws2.merge_cells('A1:K1'); ws2['A1'] = f"🔧 Maintenance Checklist — {tag}"; ws2['A1'].font = title_font
+    widths = {'A':6,'B':45,'C':9,'D':9,'E':9,'F':9,'G':9,'H':9,'I':9,'J':12,'K':22,'L':20,'M':15,'N':40,'O':24}
+    for col, width in widths.items():
+        ws2.column_dimensions[col].width = width
+    ws2.freeze_panes = "A4"
+    ws2.merge_cells('A1:O1'); ws2['A1'] = f"🔧 Maintenance Checklist — {tag}"; ws2['A1'].font = title_font
     ws2['A2'] = f"Fluid: {fluid} | Category: {cat} | Year: {year}"; ws2['A2'].font = Font(italic=True, color="666666")
 
+    done_dv = DataValidation(type="list", formula1='"Yes,No"', allow_blank=True)
+    ws2.add_data_validation(done_dv)
+
+    def _result_options(task, section):
+        text = f"{task} {section}".lower()
+        if any(k in text for k in ["alarm", "display", "self-test", "self test", "transmitter"]):
+            return '"OK,Alarm found,Reset done,Action required,NC"'
+        if any(k in text for k in ["ground", "impedance", "wiring", "connection", "cable", "gland"]):
+            return '"OK,<1 Ohm,Loose connection,Moisture found,Action required,NC"'
+        if any(k in text for k in ["liner", "electrode", "o-ring", "oring", "ring", "replacement"]):
+            return '"OK,Worn,Cleaned,Replaced,Inspection required,NC"'
+        if any(k in text for k in ["calibration", "verification", "zero", "re-zero", "bench"]):
+            return '"OK,Within tolerance,Adjusted,Calibration required,NC"'
+        if any(k in text for k in ["moisture", "ip", "junction"]):
+            return '"OK,Dry,Moisture found,Seal repaired,NC"'
+        return '"OK,Conform,Observation,Action required,NC"'
+
+    def _add_result_validation(cell, task, section):
+        dv = DataValidation(type="list", formula1=_result_options(task, section), allow_blank=True)
+        ws2.add_data_validation(dv)
+        dv.add(cell)
+
+    def _task_row(row_num, idx, task, period, section, include_days=False, fill=None):
+        ws2.cell(row=row_num, column=1, value=idx).alignment = center
+        ws2.cell(row=row_num, column=2, value=task).font = n_font
+        ws2.cell(row=row_num, column=2).alignment = wrap
+        if fill:
+            ws2.cell(row=row_num, column=1).fill = fill
+        for col in range(1, 16):
+            c = ws2.cell(row=row_num, column=col)
+            c.border = thin
+            if col != 2:
+                c.alignment = center if col != 14 else wrap
+        done_saved = _pf(period, task, "Done?")
+        result_saved = _pf(period, task, "Result") or _pf(period, task, "Status")
+        tech_saved = _pf(period, task, "Technician")
+        date_saved = _pf(period, task, "Date")
+        work_saved = _pf(period, task, "Work done")
+        if include_days:
+            for d, day in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], 3):
+                _sv = _pf(period, task, day)
+                if _sv is not None:
+                    ws2.cell(row=row_num, column=d, value=_sv)
+        if done_saved is not None:
+            ws2.cell(row=row_num, column=10, value=done_saved)
+        if result_saved is not None:
+            ws2.cell(row=row_num, column=11, value=result_saved)
+        if tech_saved is not None:
+            ws2.cell(row=row_num, column=12, value=tech_saved)
+        if date_saved is not None:
+            ws2.cell(row=row_num, column=13, value=date_saved)
+        if work_saved is not None:
+            ws2.cell(row=row_num, column=14, value=work_saved)
+        done_dv.add(ws2.cell(row=row_num, column=10))
+        _add_result_validation(ws2.cell(row=row_num, column=11), task, section)
+        ws2.cell(row=row_num, column=15, value=f'=IF(J{row_num}="Yes",IF(K{row_num}<>"","Complete","Missing result"),"Not done")')
+        return row_num + 1
+
+    def _section_summary(row_num, label, start_row, end_row, fill):
+        ws2.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=14)
+        ws2.cell(row=row_num, column=1, value=f"Validation — {label}").font = Font(bold=True, color="1B2A4A")
+        ws2.cell(row=row_num, column=1).fill = fill
+        for col in range(1, 16):
+            ws2.cell(row=row_num, column=col).border = thin
+            ws2.cell(row=row_num, column=col).alignment = center
+            ws2.cell(row=row_num, column=col).fill = fill
+        ws2.cell(row=row_num, column=15, value=f'=IF(COUNTIF(J{start_row}:J{end_row},"Yes")=ROWS(J{start_row}:J{end_row}),"All tasks done","Pending tasks")')
+        ws2.cell(row=row_num, column=15).font = Font(bold=True)
+        return row_num + 2
+
     # ---- Instructions table on the right side (cols O+) — note 17 ----
-    ws2.column_dimensions['O'].width = 22
-    ws2.column_dimensions['P'].width = 50
+    ws2.column_dimensions['Q'].width = 24
+    ws2.column_dimensions['R'].width = 55
     instr_title_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
     instr_hdr_fill = PatternFill(start_color="BBDEFB", end_color="BBDEFB", fill_type="solid")
-    ws2.merge_cells('O2:P2')
-    ws2['O2'] = "📌 How to Use This Checklist"; ws2['O2'].font = Font(bold=True, size=13, color="FFFFFF")
-    ws2['O2'].fill = instr_title_fill; ws2['O2'].alignment = center
+    ws2.merge_cells('Q2:R2')
+    ws2['Q2'] = "📌 How to Use This Checklist"; ws2['Q2'].font = Font(bold=True, size=13, color="FFFFFF")
+    ws2['Q2'].fill = instr_title_fill; ws2['Q2'].alignment = center
     irow = 4
     instr_rows = [
         ("Column / Symbol", "What to do", True),
-        ("☐ checkbox", "Tick (✔) once the task is completed for that period.", False),
-        ("Mon → Sun", "For continuous tasks, mark the day the check was done.", False),
-        ("Status", "Write: OK / Conform, or NC / Non-conform if a problem is found.", False),
+        ("No.", "Task number. The old non-clickable checkbox was removed.", False),
+        ("Done?", "Choose Yes only when the task was actually performed. If No, leave Result empty.", False),
+        ("Result", "Choose the result from the dropdown. Options adapt to the task type.", False),
+        ("Mon → Sun", "For continuous tasks, optionally mark the day the check was done.", False),
         ("Technician", "Enter the full name of the person who did the task.", False),
         ("Date", "For monthly/quarterly/annual tasks, write the date done (YYYY-MM-DD).", False),
         ("Work done", "For monthly/quarterly tasks, describe the action actually performed.", False),
-        ("Notes", "Add any observation, anomaly, or action taken.", False),
+        ("Validation", "If Done? is Yes, Result must be filled. Section rows show if all tasks are done.", False),
         ("", "", False),
         ("Cadence", "Filling frequency", True),
         ("Continuous", "Checked every week (transmitter self-test, empty-pipe detection).", False),
@@ -734,8 +819,8 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
     for label, desc, is_header in instr_rows:
         if label == "" and desc == "":
             irow += 1; continue
-        cl = ws2.cell(row=irow, column=15, value=label)  # col O
-        cd = ws2.cell(row=irow, column=16, value=desc)    # col P
+        cl = ws2.cell(row=irow, column=17, value=label)  # col Q
+        cd = ws2.cell(row=irow, column=18, value=desc)    # col R
         cd.alignment = wrap
         if is_header:
             cl.font = Font(bold=True, size=10, color="0D47A1"); cl.fill = instr_hdr_fill
@@ -751,7 +836,7 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
     quarter_months = {3:"Q1",6:"Q2",9:"Q3",12:"Q4"}
     semester_months = {6:"S1",12:"S2"}
     for m_idx, (month_name, weeks) in enumerate(months_data, 1):
-        ws2.merge_cells(f'A{row}:K{row}')
+        ws2.merge_cells(f'A{row}:O{row}')
         ws2[f'A{row}'] = f"📅 {month_name} {year}"; ws2[f'A{row}'].font = Font(bold=True, size=12, color="1565C0"); ws2[f'A{row}'].fill = b_fill; row += 1
         if mnt.continuous:
             for w in range(1, weeks + 1):
@@ -760,86 +845,65 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
                 for d, day in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], 3):
                     c = ws2.cell(row=row, column=d, value=day)
                     c.font = Font(bold=True, size=9); c.alignment = center; c.fill = g_fill; c.border = thin
-                ws2.cell(row=row, column=10, value="Status").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).fill = g_fill; ws2.cell(row=row, column=10).border = thin
-                ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).fill = g_fill; ws2.cell(row=row, column=11).border = thin
+                for col, label in [(10,"Done?"),(11,"Result"),(12,"Technician"),(13,"Date"),(14,"Work done / Notes"),(15,"Validation")]:
+                    c = ws2.cell(row=row, column=col, value=label)
+                    c.font = Font(bold=True, size=9); c.alignment = center; c.fill = g_fill; c.border = thin
                 row += 1
-                for item in mnt.continuous:
-                    ws2.cell(row=row, column=1, value="☐").alignment = center
-                    ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                    _period_c = f"{month_name}/Week {w}"
-                    _cols_c = {3:"Mon",4:"Tue",5:"Wed",6:"Thu",7:"Fri",8:"Sat",9:"Sun",10:"Status",11:"Technician"}
-                    for d in range(3, 12):
-                        _sv = _pf(_period_c, item, _cols_c[d])
-                        if _sv is not None: ws2.cell(row=row, column=d, value=_sv)
-                        ws2.cell(row=row, column=d).border = thin; ws2.cell(row=row, column=d).alignment = center
-                    row += 1
-                row += 1
+                start_task = row
+                for idx, item in enumerate(mnt.continuous, 1):
+                    row = _task_row(row, idx, item, f"{month_name}/Week {w}", "continuous", include_days=True, fill=g_fill)
+                row = _section_summary(row, f"{month_name} Week {w}", start_task, row - 1, g_fill)
         if mnt.monthly:
             ws2.merge_cells(f'A{row}:B{row}')
             ws2[f'A{row}'] = f"   📋 Monthly tasks — {month_name}"; ws2[f'A{row}'].font = Font(bold=True, size=10, color="1565C0"); ws2[f'A{row}'].fill = PatternFill(start_color="BBDEFB", end_color="BBDEFB", fill_type="solid")
-            ws2.cell(row=row, column=10, value="Date").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).border = thin
-            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin
-            ws2.cell(row=row, column=12, value="Work done").font = Font(bold=True, size=9); ws2.cell(row=row, column=12).border = thin; row += 1
-            for item in mnt.monthly:
-                ws2.cell(row=row, column=1, value="☐").alignment = center
-                ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                _period_m = f"{month_name}/Monthly"
-                for _c,_lab in [(10,"Date"),(11,"Technician"),(12,"Work done")]:
-                    _sv = _pf(_period_m, item, _lab)
-                    if _sv is not None: ws2.cell(row=row, column=_c, value=_sv)
-                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
-                ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
+            for col, label in [(10,"Done?"),(11,"Result"),(12,"Technician"),(13,"Date"),(14,"Work done"),(15,"Validation")]:
+                ws2.cell(row=row, column=col, value=label).font = Font(bold=True, size=9); ws2.cell(row=row, column=col).fill = b_fill; ws2.cell(row=row, column=col).border = thin
             row += 1
+            start_task = row
+            for idx, item in enumerate(mnt.monthly, 1):
+                row = _task_row(row, idx, item, f"{month_name}/Monthly", "monthly", fill=b_fill)
+            row = _section_summary(row, f"{month_name} Monthly", start_task, row - 1, b_fill)
         if m_idx in quarter_months and mnt.quarterly:
             ws2.merge_cells(f'A{row}:B{row}')
             ws2[f'A{row}'] = f"   🔍 Quarterly — {quarter_months[m_idx]}"; ws2[f'A{row}'].font = Font(bold=True, size=10, color="E65100"); ws2[f'A{row}'].fill = o_fill
-            ws2.cell(row=row, column=10, value="Date").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).border = thin
-            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin
-            ws2.cell(row=row, column=12, value="Work done").font = Font(bold=True, size=9); ws2.cell(row=row, column=12).border = thin; row += 1
-            for item in mnt.quarterly:
-                ws2.cell(row=row, column=1, value="☐").alignment = center
-                ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                _period_q = f"{month_name}/Quarterly {quarter_months[m_idx]}"
-                for _c,_lab in [(10,"Date"),(11,"Technician"),(12,"Work done")]:
-                    _sv = _pf(_period_q, item, _lab)
-                    if _sv is not None: ws2.cell(row=row, column=_c, value=_sv)
-                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin
-                ws2.cell(row=row, column=12).border = thin; ws2.cell(row=row, column=12).alignment = wrap; row += 1
+            for col, label in [(10,"Done?"),(11,"Result"),(12,"Technician"),(13,"Date"),(14,"Work done"),(15,"Validation")]:
+                ws2.cell(row=row, column=col, value=label).font = Font(bold=True, size=9); ws2.cell(row=row, column=col).fill = o_fill; ws2.cell(row=row, column=col).border = thin
             row += 1
+            start_task = row
+            for idx, item in enumerate(mnt.quarterly, 1):
+                row = _task_row(row, idx, item, f"{month_name}/Quarterly {quarter_months[m_idx]}", "quarterly", fill=o_fill)
+            row = _section_summary(row, f"{month_name} Quarterly {quarter_months[m_idx]}", start_task, row - 1, o_fill)
         if m_idx in semester_months and mnt.semi_annual:
             ws2.merge_cells(f'A{row}:B{row}')
             ws2[f'A{row}'] = f"   ⚙️ Semi-annual — {semester_months[m_idx]}"; ws2[f'A{row}'].font = Font(bold=True, size=10, color="BF360C"); ws2[f'A{row}'].fill = q_fill
-            ws2.cell(row=row, column=10, value="Date").font = Font(bold=True, size=9); ws2.cell(row=row, column=10).border = thin
-            ws2.cell(row=row, column=11, value="Technician").font = Font(bold=True, size=9); ws2.cell(row=row, column=11).border = thin; row += 1
-            for item in mnt.semi_annual:
-                ws2.cell(row=row, column=1, value="☐").alignment = center
-                ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-                ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
+            for col, label in [(10,"Done?"),(11,"Result"),(12,"Technician"),(13,"Date"),(14,"Work done"),(15,"Validation")]:
+                ws2.cell(row=row, column=col, value=label).font = Font(bold=True, size=9); ws2.cell(row=row, column=col).fill = q_fill; ws2.cell(row=row, column=col).border = thin
             row += 1
+            start_task = row
+            for idx, item in enumerate(mnt.semi_annual, 1):
+                row = _task_row(row, idx, item, f"{month_name}/Semi-annual {semester_months[m_idx]}", "semi-annual", fill=q_fill)
+            row = _section_summary(row, f"{month_name} Semi-annual {semester_months[m_idx]}", start_task, row - 1, q_fill)
     if mnt.annual:
-        ws2.merge_cells(f'A{row}:K{row}')
+        ws2.merge_cells(f'A{row}:O{row}')
         ws2[f'A{row}'] = f"🛠️ ANNUAL MAINTENANCE — {year}"; ws2[f'A{row}'].font = Font(bold=True, size=12, color="6A1B9A"); ws2[f'A{row}'].fill = p_fill; row += 1
-        for item in mnt.annual:
-            ws2.cell(row=row, column=1, value="☐").alignment = center
-            ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-            ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
-        row += 1
+        start_task = row
+        for idx, item in enumerate(mnt.annual, 1):
+            row = _task_row(row, idx, item, "ANNUAL", "annual", fill=p_fill)
+        row = _section_summary(row, "Annual Maintenance", start_task, row - 1, p_fill)
     if mnt.multi_year:
-        ws2.merge_cells(f'A{row}:K{row}')
+        ws2.merge_cells(f'A{row}:O{row}')
         ws2[f'A{row}'] = "📊 MULTI-YEAR MAINTENANCE (3-5 years)"; ws2[f'A{row}'].font = Font(bold=True, size=12, color="F57F17"); ws2[f'A{row}'].fill = y_fill; row += 1
-        for item in mnt.multi_year:
-            ws2.cell(row=row, column=1, value="☐").alignment = center
-            ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-            ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
-        row += 1
+        start_task = row
+        for idx, item in enumerate(mnt.multi_year, 1):
+            row = _task_row(row, idx, item, "MULTI-YEAR", "multi-year", fill=y_fill)
+        row = _section_summary(row, "Multi-year Maintenance", start_task, row - 1, y_fill)
     if mnt.replacement:
-        ws2.merge_cells(f'A{row}:K{row}')
+        ws2.merge_cells(f'A{row}:O{row}')
         ws2[f'A{row}'] = "♻️ COMPONENT REPLACEMENT"; ws2[f'A{row}'].font = Font(bold=True, size=12, color="C62828"); ws2[f'A{row}'].fill = r_fill; row += 1
-        for item in mnt.replacement:
-            ws2.cell(row=row, column=1, value="☐").alignment = center
-            ws2.cell(row=row, column=2, value=item).font = n_font; ws2.cell(row=row, column=2).border = thin
-            ws2.cell(row=row, column=10).border = thin; ws2.cell(row=row, column=11).border = thin; row += 1
-        row += 1
+        start_task = row
+        for idx, item in enumerate(mnt.replacement, 1):
+            row = _task_row(row, idx, item, "REPLACEMENT", "replacement", fill=r_fill)
+        row = _section_summary(row, "Component Replacement", start_task, row - 1, r_fill)
     ws3 = wb.create_sheet("Historical Data")
     for col, w in [(1,15),(2,20),(3,20),(4,35),(5,15),(6,20),(7,30)]:
         ws3.column_dimensions[get_column_letter(col)].width = w
