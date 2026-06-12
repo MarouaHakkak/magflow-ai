@@ -289,6 +289,10 @@ SHEET_ID = "1jVpJkHPtG808WtlKxKpcIxvNLvLyx8syIi0GlppNTgU"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 
+def _norm_tag(tag):
+    """Normalize tag numbers for matching while keeping stored/displayed values readable."""
+    return "".join(str(tag or "").upper().split())
+
 @st.cache_resource
 def get_gsheet():
     try:
@@ -307,7 +311,8 @@ def load_history(tag_filter=None):
     try:
         records = sheet.get_all_records()
         if tag_filter:
-            records = [r for r in records if r.get('Tag Number','').strip() == tag_filter.strip()]
+            target_tag = _norm_tag(tag_filter)
+            records = [r for r in records if _norm_tag(r.get('Tag Number','')) == target_tag]
         return records
     except:
         return []
@@ -317,7 +322,7 @@ def save_history(date, tag, intervention_type, task, result, technician, notes):
     if sheet is None:
         return False
     try:
-        sheet.append_row([date, tag, intervention_type, task, result, technician, notes])
+        sheet.append_row([date, str(tag).strip(), intervention_type, task, result, technician, notes])
         return True
     except:
         return False
@@ -330,7 +335,7 @@ def save_history(date, tag, intervention_type, task, result, technician, notes):
 CHECKLIST_WS = "Checklist Records"
 
 def _checklist_key(tag, period, task, col_label):
-    return f"{str(tag).strip()}::{str(period).strip()}::{str(task).strip()}::{str(col_label).strip()}"
+    return f"{_norm_tag(tag)}::{str(period).strip()}::{str(task).strip()}::{str(col_label).strip()}"
 
 def _checklist_ws():
     """Return the gspread worksheet for checklist records (create if missing)."""
@@ -355,8 +360,9 @@ def load_checklist_records(tag):
         return {}
     try:
         out = {}
+        target_tag = _norm_tag(tag)
         for r in ws.get_all_records():
-            if str(r.get("Tag", "")).strip() != str(tag).strip():
+            if _norm_tag(r.get("Tag", "")) != target_tag:
                 continue
             key = _checklist_key(r.get("Tag", ""), r.get("Period", ""), r.get("Task", ""), r.get("Column", ""))
             out[key] = str(r.get("Value", ""))
@@ -464,6 +470,12 @@ def _is_nonconform(val):
     v = str(val).strip().lower()
     return v in ("nc","non-conform","nonconform","non conform","not ok","ko","fail","failed","non conforme","non-conforme")
 
+def _is_positive_result(val):
+    if not val:
+        return False
+    v = str(val).strip().lower()
+    return v in ("ok", "conform", "yes", "done", "dry", "within tolerance", "complete", "<1 ohm")
+
 def _is_done(val):
     if not val:
         return False
@@ -473,8 +485,7 @@ def _week_date(month_name, week_num, year):
     mi = _MONTHS_IDX.get(month_name)
     if not mi:
         return ""
-    day = min(1 + (int(week_num)-1)*7, _calendar.monthrange(year, mi)[1])
-    return f"{year}-{mi:02d}-{day:02d}"
+    return f"{year}-{mi:02d} W{int(week_num)}"
 
 def extract_interventions_from_checklist(uploaded_file, tag, year=None):
     """Read the filled checklist and return a list of intervention dicts.
@@ -539,11 +550,13 @@ def extract_interventions_from_checklist(uploaded_file, tag, year=None):
                         bool(day_marks),
                     ])
                     if has_continuous_data or (not new_format and _is_nonconform(status)):
+                        period_note = f"Period: {current_month} Week {week_num}" if current_month else f"Week {week_num}"
+                        notes = " | ".join([period_note, str(work or "").strip()] + day_marks).strip(" |")
                         interventions.append({
                             "date": _week_date(current_month, week_num, year),
                             "tag": tag, "type": "Checklist task", "task": task,
                             "result": str(status or "Conform").strip(), "tech": str(tech or "").strip(),
-                            "notes": " | ".join([str(work or "").strip()] + day_marks).strip(" |")})
+                            "notes": notes})
                 else:
                     done = ws.cell(row=r, column=10).value if new_format else None
                     result = ws.cell(row=r, column=11).value if new_format else "Conform"
@@ -565,10 +578,10 @@ def save_interventions_dedup(interventions):
     existing = load_history()
     seen = set()
     for r in existing:
-        seen.add((str(r.get("Tag Number","")).strip(), str(r.get("Date","")).strip(), str(r.get("Task","")).strip()))
+        seen.add((_norm_tag(r.get("Tag Number","")), str(r.get("Date","")).strip(), str(r.get("Task","")).strip()))
     added = 0
     for it in interventions:
-        sig = (str(it["tag"]).strip(), str(it["date"]).strip(), str(it["task"]).strip())
+        sig = (_norm_tag(it["tag"]), str(it["date"]).strip(), str(it["task"]).strip())
         if sig in seen:
             continue
         ok = save_history(it["date"], it["tag"], it["type"], it["task"], it["result"], it["tech"], it["notes"])
@@ -975,47 +988,54 @@ def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor
         ws2.cell(row=row_num, column=15).font = Font(bold=True)
         return row_num + 2
 
-    # ---- Instructions table on the right side (cols O+) — note 17 ----
-    ws2.column_dimensions['Q'].width = 24
-    ws2.column_dimensions['R'].width = 55
+    # ---- Instructions table on the right side (cols Q:S) ----
+    ws2.column_dimensions['Q'].width = 20
+    ws2.column_dimensions['R'].width = 42
+    ws2.column_dimensions['S'].width = 34
     instr_title_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
-    instr_hdr_fill = PatternFill(start_color="BBDEFB", end_color="BBDEFB", fill_type="solid")
-    ws2.merge_cells('Q2:R2')
+    instr_hdr_fill = PatternFill(start_color="D9ECFF", end_color="D9ECFF", fill_type="solid")
+    instr_body_fill = PatternFill(start_color="F8FBFF", end_color="F8FBFF", fill_type="solid")
+    instr_alert_fill = PatternFill(start_color="FFF3E0", end_color="FFF3E0", fill_type="solid")
+    instr_border = Border(left=Side(style='thin', color="B7C7D9"), right=Side(style='thin', color="B7C7D9"),
+                          top=Side(style='thin', color="B7C7D9"), bottom=Side(style='thin', color="B7C7D9"))
+    ws2.merge_cells('Q2:S2')
     ws2['Q2'] = "📌 How to Use This Checklist"; ws2['Q2'].font = Font(bold=True, size=13, color="FFFFFF")
     ws2['Q2'].fill = instr_title_fill; ws2['Q2'].alignment = center
     irow = 4
     instr_rows = [
-        ("Column / Symbol", "What to do", True),
-        ("No.", "Task number. The old non-clickable checkbox was removed.", False),
-        ("Done?", "Choose Yes only when the task was actually performed. If No, leave Result empty.", False),
-        ("Result", "Choose the result from the dropdown. Options adapt to the task type.", False),
-        ("Mon → Sun", "For continuous tasks, optionally mark the day the check was done.", False),
-        ("Technician", "Enter the full name of the person who did the task.", False),
-        ("Date", "For monthly/quarterly/annual tasks, write the date done (YYYY-MM-DD).", False),
-        ("Work done", "For monthly/quarterly tasks, describe the action actually performed.", False),
-        ("Validation", "If Done? is Yes, Result must be filled. Section rows show if all tasks are done.", False),
-        ("", "", False),
-        ("Cadence", "Filling frequency", True),
-        ("Continuous", "Checked every week (transmitter self-test, empty-pipe detection).", False),
-        ("Monthly", "Once per month (HART/diagnostic alarms, display check).", False),
-        ("Quarterly (Q1–Q4)", "Every 3 months (calibration verification, grounding).", False),
-        ("Semi-annual (S1–S2)", "Every 6 months (liner/electrode inspection).", False),
-        ("Annual / Multi-year", "Once a year or every 3–5 years (full calibration, replacement).", False),
-        ("", "", False),
-        ("If Non-conform (NC)", "Log it in the 'Historical Data' sheet and open a corrective action.", True),
+        ("Field", "What to enter", "Notes", True),
+        ("No.", "Read-only task number.", "Visual reference only.", False),
+        ("Done?", "Select Yes only after doing the task.", "If No/blank, Result can stay empty.", False),
+        ("Result", "Pick the result from the dropdown.", "Options adapt to the task type.", False),
+        ("Mon → Sun", "For continuous checks, mark the checked days.", "Used for weekly history notes.", False),
+        ("Technician", "Enter initials or full name.", "Example: MH.", False),
+        ("Date", "Use YYYY-MM-DD for dated tasks.", "Continuous tasks import as period, e.g. 2026-01 W1.", False),
+        ("Work done / Notes", "Describe action, anomaly, or follow-up.", "Keep it short and factual.", False),
+        ("Validation", "Auto-calculated.", "Complete / Missing result / Not done.", False),
+        ("Cadence", "Filling frequency", "When to use it", True),
+        ("Continuous", "Every week.", "Self-test, empty-pipe detection, diagnostics.", False),
+        ("Monthly", "Once per month.", "Alarms, display, routine review.", False),
+        ("Quarterly", "Every 3 months.", "Inspection, grounding, verification.", False),
+        ("Semi-annual", "Every 6 months.", "Liner/electrode checks when applicable.", False),
+        ("Annual / Multi-year", "Once a year or every 3-5 years.", "Calibration, replacement, full review.", False),
+        ("NC / Action", "If Non-conform, log details.", "Open corrective action and add notes.", "alert"),
     ]
-    for label, desc, is_header in instr_rows:
-        if label == "" and desc == "":
-            irow += 1; continue
-        cl = ws2.cell(row=irow, column=17, value=label)  # col Q
-        cd = ws2.cell(row=irow, column=18, value=desc)    # col R
-        cd.alignment = wrap
-        if is_header:
-            cl.font = Font(bold=True, size=10, color="0D47A1"); cl.fill = instr_hdr_fill
-            cd.font = Font(bold=True, size=10, color="0D47A1"); cd.fill = instr_hdr_fill
-        else:
-            cl.font = Font(bold=True, size=10); cd.font = Font(size=10)
-        cl.border = thin; cd.border = thin
+    for label, action, note, row_type in instr_rows:
+        vals = [label, action, note]
+        ws2.row_dimensions[irow].height = 28 if row_type is True else 34
+        for offset, val in enumerate(vals, 17):
+            c = ws2.cell(row=irow, column=offset, value=val)
+            c.border = instr_border
+            c.alignment = Alignment(wrap_text=True, vertical='center', horizontal='left')
+            if row_type is True:
+                c.font = Font(bold=True, size=10, color="0D47A1")
+                c.fill = instr_hdr_fill
+            elif row_type == "alert":
+                c.font = Font(bold=True, size=10, color="9A3412")
+                c.fill = instr_alert_fill
+            else:
+                c.font = Font(bold=(offset == 17), size=10, color="1F2937")
+                c.fill = instr_body_fill
         irow += 1
 
     row = 4
@@ -1401,8 +1421,12 @@ with mt_hist:
             if records:
                 st.success(f"Found {len(records)} intervention(s) for **{search_tag}**")
                 for r in records:
-                    rc = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
-                    with st.expander(f"{rc} {r.get('Date','')} — {r.get('Type','')}"):
+                    result_text = str(r.get('Result','')).strip()
+                    rc = "🔴" if _is_nonconform(result_text) else "🟢" if _is_positive_result(result_text) else "🟡"
+                    tech_text = str(r.get('Technician','')).strip()
+                    title_bits = [r.get('Date',''), r.get('Type',''), result_text]
+                    if tech_text: title_bits.append(f"Tech: {tech_text}")
+                    with st.expander(f"{rc} " + " | ".join([str(x) for x in title_bits if x])):
                         st.markdown(f"**Task:** {r.get('Task','')}"); st.markdown(f"**Result:** {r.get('Result','')}"); st.markdown(f"**Technician:** {r.get('Technician','')}")
                         if r.get('Notes'): st.markdown(f"**Notes:** {r.get('Notes','')}")
             else: st.info(f"No history found for tag **{search_tag}**")
@@ -1418,14 +1442,16 @@ with mt_hist:
                 if tag not in tags: tags[tag] = []
                 tags[tag].append(r)
             for tag, records in sorted(tags.items()):
-                cc = sum(1 for r in records if r.get('Result') == 'Conform')
-                nc = sum(1 for r in records if r.get('Result') == 'Non-conform')
+                cc = sum(1 for r in records if _is_positive_result(r.get('Result')))
+                nc = sum(1 for r in records if _is_nonconform(r.get('Result')))
                 oc = len(records) - cc - nc
                 summary = (f"🟢 {cc}" if cc else "") + (f"  🔴 {nc}" if nc else "") + (f"  🟡 {oc}" if oc else "")
                 with st.expander(f"📁 **{tag}** — {len(records)} intervention(s)  {summary}"):
                     for r in sorted(records, key=lambda x: x.get('Date',''), reverse=True):
-                        rc = "🟢" if r.get('Result') == "Conform" else "🔴" if r.get('Result') == "Non-conform" else "🟡"
-                        st.markdown(f"{rc} **{r.get('Date','')}** | {r.get('Type','')} | {r.get('Technician','')}")
+                        result_text = str(r.get('Result','')).strip()
+                        rc = "🔴" if _is_nonconform(result_text) else "🟢" if _is_positive_result(result_text) else "🟡"
+                        tech_text = str(r.get('Technician','')).strip()
+                        st.markdown(f"{rc} **{r.get('Date','')}** | {r.get('Type','')} | **{result_text or 'No result'}**" + (f" | {tech_text}" if tech_text else ""))
                         if r.get('Task'): st.caption(f"↳ {r.get('Task','')[:80]}{'...' if len(r.get('Task','')) > 80 else ''}")
         else: st.info("No interventions recorded yet.")
 
