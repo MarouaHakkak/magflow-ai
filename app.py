@@ -946,16 +946,14 @@ with st.sidebar:
 #  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
 # Top row: JESA logo (top-left, bigger) + discreet Home button (top-right)
-htop1, htop2 = st.columns([3, 1])
+htop1, htop2 = st.columns([5, 1])
 with htop1:
     if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
         st.image(IMG_JESA_LOGO, width=160)
 with htop2:
-    st.write("")
     if st.button("🏠 Home", key="title_home"):
         st.session_state.page = "home"
         st.rerun()
-
 # Centered big MagFlow AI title + description
 st.markdown(f"""
 <style>
