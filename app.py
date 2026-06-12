@@ -276,6 +276,105 @@ def read_checklist_from_excel(uploaded_file, tag):
     except Exception:
         return {}
 
+import calendar as _calendar
+
+_MONTHS_IDX = {m:i for i,m in enumerate(
+    ["January","February","March","April","May","June","July","August",
+     "September","October","November","December"], 1)}
+
+def _is_nonconform(val):
+    if not val:
+        return False
+    v = str(val).strip().lower()
+    return v in ("nc","non-conform","nonconform","non conform","not ok","ko","fail","failed","non conforme","non-conforme")
+
+def _week_date(month_name, week_num, year):
+    mi = _MONTHS_IDX.get(month_name)
+    if not mi:
+        return ""
+    day = min(1 + (int(week_num)-1)*7, _calendar.monthrange(year, mi)[1])
+    return f"{year}-{mi:02d}-{day:02d}"
+
+def extract_interventions_from_checklist(uploaded_file, tag, year=None):
+    """Read the filled checklist and return a list of intervention dicts.
+    Dated tasks (monthly/quarterly/...) that are filled -> intervention.
+    Continuous tasks -> intervention only if Status is Non-conform."""
+    if year is None:
+        year = datetime.now().year
+    try:
+        wb = openpyxl.load_workbook(uploaded_file)
+        if "Maintenance Checklist" not in wb.sheetnames:
+            return []
+        ws = wb["Maintenance Checklist"]
+        interventions = []
+        current_month = None
+        mode = None
+        week_num = 1
+        for r in range(1, ws.max_row + 1):
+            a = ws.cell(row=r, column=1).value
+            a_str = str(a).strip() if a is not None else ""
+            if a_str.startswith("📅"):  # calendar emoji month header
+                toks = a_str.replace("📅", "").strip().split()
+                current_month = toks[0] if toks else None
+                continue
+            if a_str.lstrip().startswith("Week"):
+                mode = "continuous"
+                try: week_num = int(a_str.lstrip().split()[1])
+                except: week_num = 1
+                continue
+            if "Monthly tasks" in a_str:
+                mode = "dated"; continue
+            if "Quarterly" in a_str and "—" in a_str:
+                mode = "dated"; continue
+            if "Semi-annual" in a_str and "—" in a_str:
+                mode = "dated"; continue
+            if "ANNUAL MAINTENANCE" in a_str:
+                mode = "dated"; continue
+            if "MULTI-YEAR" in a_str:
+                mode = "dated"; continue
+            if "COMPONENT REPLACEMENT" in a_str:
+                mode = "dated"; continue
+            task = ws.cell(row=r, column=2).value
+            if a_str == "☐" and task:  # checkbox + task name
+                task = str(task).strip()
+                if mode == "continuous":
+                    status = ws.cell(row=r, column=10).value
+                    tech = ws.cell(row=r, column=11).value
+                    if _is_nonconform(status):
+                        interventions.append({
+                            "date": _week_date(current_month, week_num, year),
+                            "tag": tag, "type": "Checklist task", "task": task,
+                            "result": str(status).strip(), "tech": str(tech or "").strip(), "notes": ""})
+                else:
+                    date = ws.cell(row=r, column=10).value
+                    tech = ws.cell(row=r, column=11).value
+                    work = ws.cell(row=r, column=12).value
+                    if (date and str(date).strip()) or (tech and str(tech).strip()) or (work and str(work).strip()):
+                        interventions.append({
+                            "date": str(date).strip() if date else "",
+                            "tag": tag, "type": "Checklist task", "task": task,
+                            "result": "Conform", "tech": str(tech or "").strip(),
+                            "notes": str(work or "").strip()})
+        return interventions
+    except Exception:
+        return []
+
+def save_interventions_dedup(interventions):
+    """Save interventions to history, skipping duplicates (same tag+date+task)."""
+    existing = load_history()
+    seen = set()
+    for r in existing:
+        seen.add((str(r.get("Tag Number","")).strip(), str(r.get("Date","")).strip(), str(r.get("Task","")).strip()))
+    added = 0
+    for it in interventions:
+        sig = (str(it["tag"]).strip(), str(it["date"]).strip(), str(it["task"]).strip())
+        if sig in seen:
+            continue
+        ok = save_history(it["date"], it["tag"], it["type"], it["task"], it["result"], it["tech"], it["notes"])
+        if ok:
+            seen.add(sig); added += 1
+    return added
+
 def import_from_excel(uploaded_file):
     try:
         wb = openpyxl.load_workbook(uploaded_file)
@@ -946,14 +1045,16 @@ with st.sidebar:
 #  Title/logo is clickable -> returns to Home (note 15)
 # ============================================================
 # Top row: JESA logo (top-left, bigger) + discreet Home button (top-right)
-htop1, htop2 = st.columns([5, 1])
+htop1, htop2 = st.columns([3, 1])
 with htop1:
     if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
         st.image(IMG_JESA_LOGO, width=160)
 with htop2:
+    st.write("")
     if st.button("🏠 Home", key="title_home"):
         st.session_state.page = "home"
         st.rerun()
+
 # Centered big MagFlow AI title + description
 st.markdown(f"""
 <style>
@@ -962,7 +1063,7 @@ st.markdown(f"""
 .mf-title {{
     font-family:'Comfortaa',cursive;
     font-weight:700;
-    font-size:150px !important;
+    font-size:74px;
     background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
     -webkit-background-clip:text;
     -webkit-text-fill-color:transparent;
@@ -992,7 +1093,10 @@ with mt_hist:
     st.header("📋 Maintenance History")
     st.markdown("Log and track all maintenance interventions for each flowmeter across JESA/OCP projects.")
     with st.expander("📥 Import from Maintenance Excel (Historical Data sheet)", expanded=False):
-        st.markdown("Upload a MagFlow AI maintenance Excel file — all filled rows from the **Historical Data** sheet will be imported automatically.")
+        st.markdown("Upload a filled MagFlow AI maintenance Excel. Enter the **tag** below, then import. "
+                    "The app will: (1) save the **Historical Data** rows, (2) auto-create interventions from the "
+                    "**filled checklist** (dated tasks, plus any non-conform continuous checks), and (3) remember the "
+                    "checklist so it stays pre-filled when you re-download it for the same tag.")
         uploaded_excel = st.file_uploader("Upload Excel file", type=["xlsx"], key="excel_import")
         if uploaded_excel:
             imp_tag = st.text_input("Tag Number for this checklist", placeholder="e.g., 204M-FE/FIT-063M", key="imp_tag")
@@ -1000,19 +1104,31 @@ with mt_hist:
                 with st.spinner("Reading Excel and saving to database..."):
                     count, error = import_from_excel(uploaded_excel)
                     chk_saved = 0
+                    auto_interv = 0
                     if imp_tag.strip():
+                        # 1) remember the filled checklist cells (for pre-fill on re-download)
                         try:
                             uploaded_excel.seek(0)
                         except Exception:
                             pass
                         cells = read_checklist_from_excel(uploaded_excel, imp_tag.strip())
                         chk_saved = save_checklist_records(imp_tag.strip(), cells)
+                        # 2) auto-generate interventions in Historical Data from the checklist
+                        try:
+                            uploaded_excel.seek(0)
+                        except Exception:
+                            pass
+                        interv = extract_interventions_from_checklist(uploaded_excel, imp_tag.strip())
+                        auto_interv = save_interventions_dedup(interv)
                 if error: st.error(f"❌ Import failed: {error}")
-                elif count == 0 and chk_saved == 0: st.warning("⚠️ No valid rows found.")
+                elif count == 0 and chk_saved == 0 and auto_interv == 0: st.warning("⚠️ No valid rows found.")
                 else:
-                    msg = f"✅ {count} intervention(s) imported!"
-                    if chk_saved: msg += f" {chk_saved} checklist cell(s) saved."
-                    st.success(msg); st.balloons()
+                    parts = []
+                    if count: parts.append(f"{count} row(s) from Historical Data")
+                    if auto_interv: parts.append(f"{auto_interv} intervention(s) auto-created from checklist")
+                    if chk_saved: parts.append(f"{chk_saved} checklist cell(s) saved for pre-fill")
+                    st.success("✅ " + " · ".join(parts) if parts else "✅ Done")
+                    st.balloons()
     st.divider()
     col_form, col_view = st.columns([1, 1])
     with col_form:
