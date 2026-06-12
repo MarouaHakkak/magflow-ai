@@ -964,7 +964,7 @@ st.markdown(f"""
 .mf-title {{
     font-family:'Comfortaa',cursive;
     font-weight:700;
-    font-size:74px;
+    font-size:130px;
     background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
     -webkit-background-clip:text;
     -webkit-text-fill-color:transparent;
