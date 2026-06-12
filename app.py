@@ -22,7 +22,7 @@ EXCEL_FILE_PATH = "Data_Collection_v2.xlsx"
 #   direct image URL. It must end in .png / .jpg and load on
 #   its own in a browser tab.)
 # ============================================================
-IMG_JESA_LOGO = "https://prod.cdn-medias.jeuneafrique.com/medias/2022/04/25/logo-jesa.png"
+IMG_JESA_LOGO = "https://i.imgur.com/K0ObAF4.png"
 IMG_HERO      = "https://media.licdn.com/dms/image/v2/C561BAQEdzlQbQ6QRaQ/company-background_10000/company-background_10000/0/1583908059030?e=2147483647&v=beta&t=mn-3EDPCiDBT3qiDScVJVLzAlN_XvD2F3rDBL1YinXQ"
 IMG_FLOWMETER = "https://upload.wikimedia.org/wikipedia/commons/2/24/%D0%A0%D0%B0%D1%81%D1%85%D0%BE%D0%B4%D0%BE%D0%BC%D0%B5%D1%80_%D1%8D%D0%BB%D0%B5%D0%BA%D1%82%D1%80%D0%BE%D0%BC%D0%B0%D0%B3%D0%BD%D0%B8%D1%82%D0%BD%D1%8B%D0%B9.jpg"  # magnetic flowmeter photo (Wikimedia Commons)
 
@@ -952,24 +952,24 @@ with hb:
         st.session_state.page = "home"
         st.rerun()
 
-# Centered header with JESA logo + styled MagFlow AI title (Poppins + blue→teal gradient)
+# Left-aligned header: JESA logo + styled MagFlow AI title (Comfortaa, big)
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
-.mf-header {{ text-align:center; margin-top:-8px; }}
-.mf-header img {{ height:46px; margin-bottom:8px; }}
+@import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&display=swap');
+.mf-header {{ text-align:left; margin-top:-8px; }}
+.mf-header img {{ height:50px; margin-bottom:6px; }}
 .mf-title {{
-    font-family:'Poppins',sans-serif;
-    font-weight:800;
-    font-size:46px;
+    font-family:'Comfortaa',cursive;
+    font-weight:700;
+    font-size:52px;
     background:linear-gradient(90deg,#1B2A4A 0%,#1565C0 45%,#028090 100%);
     -webkit-background-clip:text;
     -webkit-text-fill-color:transparent;
     background-clip:text;
     margin:0;
-    letter-spacing:0.5px;
+    line-height:1.15;
 }}
-.mf-sub {{ font-size:16px;color:#555;margin:6px 0 0 0;font-weight:500; }}
+.mf-sub {{ font-size:16px;color:#555;margin:8px 0 0 0;font-weight:500; }}
 .mf-meta {{ font-size:12px;color:#999;margin:2px 0 0 0; }}
 </style>
 <div class="mf-header">
