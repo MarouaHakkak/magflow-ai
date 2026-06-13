@@ -197,10 +197,18 @@ div[data-baseweb="select"] > div, input, textarea {
 }
 /* Landing hero card */
 .mf-hero {
-    border-radius: 18px;
+    border-radius: 26px;
     overflow: hidden;
-    box-shadow: 0 8px 30px rgba(21,42,74,0.18);
-    margin-bottom: 8px;
+    box-shadow: 0 18px 46px rgba(21,42,74,0.17);
+    margin: 10px auto 18px auto;
+    border: 1px solid rgba(226,236,248,0.9);
+}
+.mf-hero img {
+    width: 100%;
+    display: block;
+    max-height: 560px;
+    object-fit: cover;
+    object-position: center;
 }
 .mf-card {
     background: #FFFFFF;
@@ -208,6 +216,73 @@ div[data-baseweb="select"] > div, input, textarea {
     padding: 22px;
     box-shadow: 0 3px 14px rgba(21,42,74,0.08);
     height: 100%;
+}
+.mf-landing-head {
+    position: relative;
+    min-height: 310px;
+    padding: 88px 24px 42px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: linear-gradient(135deg, rgba(255,255,255,0.86) 0%, rgba(239,248,255,0.92) 58%, rgba(225,242,255,0.88) 100%);
+    border-bottom: 1px solid rgba(199,222,248,0.82);
+    margin: -8px -10px 22px -10px;
+}
+.mf-landing-logo {
+    position: absolute;
+    left: 32px;
+    top: 92px;
+    width: 185px;
+}
+.mf-landing-title {
+    font-family: 'Inter', Arial, system-ui, sans-serif;
+    font-size: clamp(72px, 6.8vw, 112px);
+    line-height: 0.98;
+    font-weight: 780;
+    letter-spacing: -0.05em;
+    color: #06246B;
+    margin: 0;
+    text-align: center;
+    text-shadow: 0 2px 0 rgba(255,255,255,0.9), 0 10px 22px rgba(8,37,107,0.08);
+}
+.mf-landing-title .ai {
+    color: #14A8D8;
+    letter-spacing: -0.025em;
+}
+.mf-landing-sub {
+    font-size: clamp(20px, 1.65vw, 28px);
+    color: #1565C0;
+    margin: 30px auto 0 auto;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+    max-width: 1240px;
+}
+.mf-landing-meta {
+    font-size: clamp(15px, 1.18vw, 20px);
+    color: #888;
+    margin: 24px auto 0 auto;
+    text-align: center;
+}
+.mf-home-title {
+    color: #1B2A4A;
+    font-size: 30px;
+    font-weight: 850;
+    margin: 34px 0 12px 0;
+    letter-spacing: -0.02em;
+}
+.mf-home-subtitle {
+    color: #1565C0;
+    font-size: 22px;
+    font-weight: 800;
+    margin: 26px 0 14px 0;
+}
+.mf-home-copy {
+    font-size: 16px;
+    color: #444;
+    line-height: 1.65;
+    max-width: 1120px;
 }
 .mf-step {
     background: #FFFFFF;
@@ -221,7 +296,7 @@ div[data-baseweb="select"] > div, input, textarea {
 .mf-app-hero {
     position: relative;
     overflow: hidden;
-    min-height: 390px;
+    min-height: 430px;
     border-radius: 0;
     padding: 0;
     margin: -6px -10px 30px -10px;
@@ -266,9 +341,9 @@ div[data-baseweb="select"] > div, input, textarea {
     justify-content: center;
     text-align: center;
     width: 100%;
-    min-height: 390px;
+    min-height: 430px;
     margin: 0 auto;
-    padding: 72px 60px 56px 60px;
+    padding: 58px 60px 82px 60px;
 }
 .mf-wave-logo {
     display: none;
@@ -281,11 +356,11 @@ div[data-baseweb="select"] > div, input, textarea {
 }
 .mf-app-title {
     margin: 0;
-    font-family: 'Inter', 'Arial Black', 'Arial Narrow', system-ui, sans-serif;
-    font-size: clamp(82px, 9vw, 138px);
-    line-height: 0.92;
-    font-weight: 900;
-    letter-spacing: -0.055em;
+    font-family: 'Inter', 'Arial', system-ui, sans-serif;
+    font-size: clamp(70px, 7.3vw, 112px);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.045em;
     color: #06246B;
     text-align: center;
     text-shadow: 0 2px 0 rgba(255,255,255,0.85), 0 10px 24px rgba(8,37,107,0.10);
@@ -296,11 +371,13 @@ div[data-baseweb="select"] > div, input, textarea {
 }
 .mf-app-sub {
     color: #40506A;
-    font-size: clamp(20px, 1.75vw, 30px);
-    font-weight: 500;
-    margin: 36px auto 24px auto;
+    font-size: clamp(18px, 1.45vw, 25px);
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 52px auto 26px auto;
     text-align: center;
-    max-width: 1180px;
+    max-width: 1280px;
+    white-space: normal;
 }
 .mf-app-meta {
     color: #6E7C92;
@@ -310,11 +387,11 @@ div[data-baseweb="select"] > div, input, textarea {
     text-align: center;
 }
 .mf-home-row {
-    position: absolute;
-    right: 5.4%;
-    top: 40px;
-    width: 150px;
-    z-index: 10;
+    margin: -18px 0 18px 0;
+}
+.mf-home-row div[data-testid="stVerticalBlock"],
+.mf-home-row div[data-testid="stElementContainer"] {
+    width: 100% !important;
 }
 .mf-app-home-shell {
     position: relative;
@@ -326,8 +403,8 @@ div[data-baseweb="select"] > div, input, textarea {
     border: 1px solid #E2EAF5 !important;
     border-radius: 22px !important;
     box-shadow: 0 14px 34px rgba(16,42,99,0.12) !important;
-    min-height: 72px;
-    font-size: 18px;
+    min-height: 54px;
+    font-size: 16px;
     justify-content: center;
 }
 .mf-section-shell {
@@ -1490,23 +1567,23 @@ if "page" not in st.session_state:
 #  LANDING PAGE
 # ------------------------------------------------------------
 def render_landing():
-    # Top bar: JESA logo + title
-    lc1, lc2 = st.columns([1, 4])
-    with lc1:
-        if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
-            st.image(IMG_JESA_LOGO, width=160)
-    with lc2:
-        st.markdown(
-            "<h1 style='color:#1B2A4A;margin-bottom:0'>🔧 MagFlow AI</h1>"
-            "<p style='font-size:18px;color:#1565C0;margin-top:2px;font-weight:600'>"
-            "AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
-            "<p style='font-size:13px;color:#888;margin-top:0'>PFE ENSA — JESA (OCP × Worley) · "
-            "Instrumentation & Control · 2026</p>",
-            unsafe_allow_html=True)
+    logo_html = f"<img class='mf-landing-logo' src='{IMG_JESA_LOGO}' alt='JESA logo'>" if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_") else ""
+    st.markdown(
+        f"""
+        <div class="mf-landing-head">
+          {logo_html}
+          <div>
+            <div class="mf-landing-title">MagFlow <span class="ai">AI</span></div>
+            <div class="mf-landing-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</div>
+            <div class="mf-landing-meta">PFE ENSA — JESA (OCP × Worley) · Instrumentation &amp; Control · 2026</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True)
 
     # Hero image
     if IMG_HERO and not IMG_HERO.startswith("REPLACE_"):
-        st.markdown(f"<div class='mf-hero'><img src='{IMG_HERO}' style='width:100%;display:block'></div>",
+        st.markdown(f"<div class='mf-hero'><img src='{IMG_HERO}' alt='JESA industrial hero'></div>",
                     unsafe_allow_html=True)
     else:
         st.info("🖼️ Hero image goes here — set `IMG_HERO` at the top of app.py (see chat for how to get the URL).")
@@ -1520,19 +1597,17 @@ def render_landing():
             st.session_state.page = "app"
             st.rerun()
 
-    st.divider()
-
     # What it is / what it does
-    st.markdown("<h2 style='color:#1B2A4A'>What is MagFlow AI?</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='mf-home-title'>What is MagFlow AI?</div>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='font-size:16px;color:#444'>MagFlow AI is an AI-based predictive-maintenance assistant "
+        "<p class='mf-home-copy'>MagFlow AI is an AI-based predictive-maintenance assistant "
         "<b>developed and validated on electromagnetic flowmeters, with a generic and extensible architecture</b>. "
         "It turns a flowmeter's process conditions into a complete engineering recommendation: the right materials, "
         "compatible vendor models, total cost of ownership, drift risk, and a year-round maintenance plan — "
         "grounded in a database of real JESA/OCP projects.</p>",
         unsafe_allow_html=True)
 
-    st.markdown("<h3 style='color:#1565C0'>What it does</h3>", unsafe_allow_html=True)
+    st.markdown("<div class='mf-home-subtitle'>What it does</div>", unsafe_allow_html=True)
     f1, f2, f3, f4 = st.columns(4)
     for col, (icon, title, body, color) in zip(
         [f1, f2, f3, f4],
@@ -1550,7 +1625,7 @@ def render_landing():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Magnetic flowmeter — photo + description
-    st.markdown("<h3 style='color:#1565C0'>The magnetic flowmeter</h3>", unsafe_allow_html=True)
+    st.markdown("<div class='mf-home-subtitle'>The magnetic flowmeter</div>", unsafe_allow_html=True)
     pc1, pc2 = st.columns([2, 3])
     with pc1:
         if IMG_FLOWMETER and not IMG_FLOWMETER.startswith("REPLACE_"):
@@ -1573,7 +1648,7 @@ def render_landing():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # How to use it (first-time user steps)
-    st.markdown("<h2 style='color:#1B2A4A'>How to use it</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='mf-home-title'>How to use it</div>", unsafe_allow_html=True)
     steps = [
         ("1 · Enter process data", "Open the <b>Recommendation Engine</b>, then fill the fluid, pipe, operating conditions and any special notes."),
         ("2 · Run the engine", "Click <b>Run Recommendation</b>. You'll get all four layers: validation, materials, vendors, and TCO & drift."),
@@ -1677,12 +1752,15 @@ st.markdown("""
       <p class="mf-app-meta">PFE ENSA — JESA (OCP × Worley) &nbsp; | &nbsp; Instrumentation &amp; Control &nbsp; | &nbsp; Developed by Maroua Hakkak — 2026</p>
     </div>
   </div>
+ </div>
 """, unsafe_allow_html=True)
 st.markdown('<div class="mf-home-row">', unsafe_allow_html=True)
-if st.button("🏠 Home", key="top_home_modern", use_container_width=True):
-    st.session_state.page = "home"
-    st.rerun()
-st.markdown('</div></div>', unsafe_allow_html=True)
+_home_gap, _home_btn, _home_gap2 = st.columns([4.5, 1.2, 4.5])
+with _home_btn:
+    if st.button("🏠 Home", key="top_home_modern", use_container_width=True):
+        st.session_state.page = "home"
+        st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
 mt_reco, mt_hist, mt_import, mt_dash = st.tabs(
