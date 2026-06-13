@@ -1,5 +1,5 @@
 """MagFlow AI v3 — Core Engine"""
-import openpyxl, math
+import openpyxl, math, re
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
@@ -153,6 +153,28 @@ def get_category(ft):
     if 'abrasive' in ft: return 'Abrasive'
     if any(k in ft for k in ['corrosive','acid']): return 'Corrosive'
     return 'Clean'
+
+def fluid_key(value):
+    text = str(value or '').lower().replace('&', ' and ')
+    text = re.sub(r'[^a-z0-9]+', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+def project_fluid_keys(value):
+    raw = str(value or '')
+    parts = [raw]
+    for sep in ['—', '–', '|', ';']:
+        parts.extend(raw.split(sep))
+    keys, seen = [], set()
+    for part in parts:
+        key = fluid_key(part)
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+def fluid_exact_match(input_fluid, project_fluid):
+    key = fluid_key(input_fluid)
+    return bool(key and key in project_fluid_keys(project_fluid))
 
 def is_conductive(pipe_mat, pipe_liner):
     if pipe_mat.upper() in ['FRP','PVC','HDPE','GRP']: return False
@@ -369,10 +391,9 @@ class Layer4:
         return m
     def _el(self, cat): return '5-10 years' if cat=='Abrasive' else ('12-18 years' if cat=='Corrosive' else '20+ years')
     def _validate(self, inp, mat, fluid):
-        matches = []; fn = inp.fluid_name.lower()
+        matches = []
         for p in self.data.project_data:
-            pf = p.get('fluid','').lower()
-            if fn in pf or pf in fn:
+            if fluid_exact_match(inp.fluid_name, p.get('fluid','')):
                 det = {}; conf = 100; expl = ''; cost = ''
                 pe, pl, pt = p.get('electrode',''), p.get('liner',''), p.get('tube','')
                 if mat_match(mat.electrode, pe): det['Electrode'] = f"{pe} ✓"
