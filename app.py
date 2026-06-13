@@ -9,8 +9,6 @@ from openpyxl.worksheet.datavalidation import DataValidation
 import io
 import json
 import html
-import re
-from difflib import SequenceMatcher
 import gspread
 from google.oauth2.service_account import Credentials
 from magflow_ai import MagFlowAI, ProcessInput
@@ -197,18 +195,10 @@ div[data-baseweb="select"] > div, input, textarea {
 }
 /* Landing hero card */
 .mf-hero {
-    border-radius: 26px;
+    border-radius: 18px;
     overflow: hidden;
-    box-shadow: 0 18px 46px rgba(21,42,74,0.17);
-    margin: 10px auto 18px auto;
-    border: 1px solid rgba(226,236,248,0.9);
-}
-.mf-hero img {
-    width: 100%;
-    display: block;
-    max-height: 560px;
-    object-fit: cover;
-    object-position: center;
+    box-shadow: 0 8px 30px rgba(21,42,74,0.18);
+    margin-bottom: 8px;
 }
 .mf-card {
     background: #FFFFFF;
@@ -216,73 +206,6 @@ div[data-baseweb="select"] > div, input, textarea {
     padding: 22px;
     box-shadow: 0 3px 14px rgba(21,42,74,0.08);
     height: 100%;
-}
-.mf-landing-head {
-    position: relative;
-    min-height: 310px;
-    padding: 88px 24px 42px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    background: linear-gradient(135deg, rgba(255,255,255,0.86) 0%, rgba(239,248,255,0.92) 58%, rgba(225,242,255,0.88) 100%);
-    border-bottom: 1px solid rgba(199,222,248,0.82);
-    margin: -8px -10px 22px -10px;
-}
-.mf-landing-logo {
-    position: absolute;
-    left: 32px;
-    top: 92px;
-    width: 185px;
-}
-.mf-landing-title {
-    font-family: 'Inter', Arial, system-ui, sans-serif;
-    font-size: clamp(72px, 6.8vw, 112px);
-    line-height: 0.98;
-    font-weight: 780;
-    letter-spacing: -0.05em;
-    color: #06246B;
-    margin: 0;
-    text-align: center;
-    text-shadow: 0 2px 0 rgba(255,255,255,0.9), 0 10px 22px rgba(8,37,107,0.08);
-}
-.mf-landing-title .ai {
-    color: #14A8D8;
-    letter-spacing: -0.025em;
-}
-.mf-landing-sub {
-    font-size: clamp(20px, 1.65vw, 28px);
-    color: #1565C0;
-    margin: 30px auto 0 auto;
-    font-weight: 600;
-    line-height: 1.25;
-    text-align: center;
-    max-width: 1240px;
-}
-.mf-landing-meta {
-    font-size: clamp(15px, 1.18vw, 20px);
-    color: #888;
-    margin: 24px auto 0 auto;
-    text-align: center;
-}
-.mf-home-title {
-    color: #1B2A4A;
-    font-size: 30px;
-    font-weight: 850;
-    margin: 34px 0 12px 0;
-    letter-spacing: -0.02em;
-}
-.mf-home-subtitle {
-    color: #1565C0;
-    font-size: 22px;
-    font-weight: 800;
-    margin: 26px 0 14px 0;
-}
-.mf-home-copy {
-    font-size: 16px;
-    color: #444;
-    line-height: 1.65;
-    max-width: 1120px;
 }
 .mf-step {
     background: #FFFFFF;
@@ -296,42 +219,13 @@ div[data-baseweb="select"] > div, input, textarea {
 .mf-app-hero {
     position: relative;
     overflow: hidden;
-    min-height: 430px;
+    min-height: 490px;
     border-radius: 0;
-    padding: 0;
-    margin: -6px -10px 30px -10px;
-    background:
-        radial-gradient(circle at 13% 58%, rgba(214,235,255,0.72) 0 10%, transparent 23%),
-        radial-gradient(circle at 92% 7%, rgba(202,231,247,0.60) 0 9%, transparent 24%),
-        linear-gradient(155deg, rgba(255,255,255,0.96) 0%, rgba(247,251,255,0.96) 46%, rgba(225,241,255,0.95) 100%);
-    border-bottom: 1px solid rgba(190,216,246,0.85);
-    box-shadow: 0 18px 46px rgba(16,42,99,0.08);
-}
-.mf-app-hero::before {
-    content: "";
-    position: absolute;
-    left: -2%;
-    top: 28%;
-    width: 28%;
-    height: 34%;
-    background:
-        radial-gradient(circle at 50% 50%, rgba(255,255,255,0.88) 0 29%, transparent 30%),
-        linear-gradient(90deg, rgba(17,96,224,0.12), rgba(29,180,215,0.12));
-    border-radius: 50%;
-    filter: blur(0.2px);
-    opacity: 0.95;
-}
-.mf-app-hero::after {
-    content: "";
-    position: absolute;
-    right: -7%;
-    bottom: -20%;
-    width: 52%;
-    height: 62%;
-    background:
-        linear-gradient(145deg, transparent 0 31%, rgba(207,229,253,0.58) 32% 54%, rgba(186,218,251,0.52) 55% 100%);
-    border-radius: 60% 0 0 0;
-    transform: skewY(-8deg);
+    padding: 54px 60px 96px 60px;
+    margin: -6px -10px 28px -10px;
+    background: #F8FBFF;
+    border-bottom: 1px solid rgba(180,207,238,0.8);
+    box-shadow: none;
 }
 .mf-hero-inner {
     position: relative;
@@ -341,71 +235,52 @@ div[data-baseweb="select"] > div, input, textarea {
     justify-content: center;
     text-align: center;
     width: 100%;
-    min-height: 430px;
+    min-height: 490px;
     margin: 0 auto;
-    padding: 58px 60px 82px 60px;
 }
-.mf-wave-logo {
-    display: none;
-}
-.mf-wave-logo::before {
-    content: none;
-}
-.mf-wave-logo::after {
-    content: none;
+.mf-title-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 .mf-app-title {
     margin: 0;
-    font-family: 'Inter', 'Arial', system-ui, sans-serif;
-    font-size: clamp(70px, 7.3vw, 112px);
-    line-height: 1;
+    font-size: clamp(64px, 6.6vw, 98px);
+    line-height: 1.15;
     font-weight: 800;
     letter-spacing: -0.045em;
     color: #06246B;
-    text-align: center;
-    text-shadow: 0 2px 0 rgba(255,255,255,0.85), 0 10px 24px rgba(8,37,107,0.10);
+    padding-bottom: 82px;
 }
 .mf-app-title .ai {
     color: #14A8D8;
-    letter-spacing: -0.025em;
 }
 .mf-app-sub {
     color: #40506A;
     font-size: clamp(18px, 1.45vw, 25px);
     font-weight: 600;
     line-height: 1.25;
-    margin: 52px auto 26px auto;
-    text-align: center;
+    margin: 0 auto 32px auto;
     max-width: 1280px;
-    white-space: normal;
 }
 .mf-app-meta {
-    color: #6E7C92;
-    font-size: clamp(16px, 1.28vw, 22px);
-    font-weight: 500;
-    margin: 0 auto;
-    text-align: center;
+    color: #748196;
+    font-size: 18px;
+    font-weight: 800;
+    margin: 0;
 }
 .mf-home-row {
-    margin: -18px 0 18px 0;
-}
-.mf-home-row div[data-testid="stVerticalBlock"],
-.mf-home-row div[data-testid="stElementContainer"] {
-    width: 100% !important;
-}
-.mf-app-home-shell {
+    margin: 0 0 -58px 0;
     position: relative;
     z-index: 5;
 }
 .mf-home-row .stButton button {
-    background: rgba(255,255,255,0.94) !important;
+    background: rgba(255,255,255,0.88) !important;
     color: #344054 !important;
     border: 1px solid #E2EAF5 !important;
-    border-radius: 22px !important;
-    box-shadow: 0 14px 34px rgba(16,42,99,0.12) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 12px 30px rgba(16,42,99,0.10) !important;
     min-height: 54px;
-    font-size: 16px;
-    justify-content: center;
 }
 .mf-section-shell {
     background: rgba(255,255,255,0.72);
@@ -826,9 +701,7 @@ If this page contains an instrument specification (has a Tag Number and process 
 If not (cover page, index, notes), return exactly: []
 Return ONLY a JSON array with one object per instrument found:
 [{"project":"...","tag":"...","service":"...","fluid":"...","dn":80,"flow_normal":23.0,"flow_max":26.0,"temp_design":105,"pressure_design":10.0,"conductivity":">5 uS/cm","electrode":"Tantalum","liner":"PFA","tube":"316L SS","grounding":"Grounding straps","accuracy":"0.2%","vendor":"VTA","model":"VTA"}]
-Use the exact value from the PDF when it is present, but correct obvious OCR spelling only when the meaning is certain (example: PHOPHORIC ACID -> phosphoric acid).
-Do not invent maintenance plans, CAPEX scores, or database ratings. Use null when the PDF does not provide a value.
-Return ONLY JSON, no markdown."""
+Use null for missing numeric values. Return ONLY JSON, no markdown."""
 
         reader = PdfReader(_io.BytesIO(pdf_bytes))
         all_instruments = []
@@ -900,235 +773,81 @@ def push_excel_to_github(wb, sha, commit_msg):
     except Exception as e:
         return False, str(e)
 
-INVALID_IMPORT_VALUES = {"", "-", "—", "N/A", "NA", "NONE", "NULL", "VTA", "TBD", "UNKNOWN", "NOT APPLICABLE"}
-
-IMPORT_ALIASES = {
-    "seawater": "sea water",
-    "sea water": "sea water",
-    "phophoric acid": "phosphoric acid",
-    "phosporic acid": "phosphoric acid",
-    "phosphoricacid": "phosphoric acid",
-    "316 ss": "316 stainless steel",
-    "316l ss": "316l stainless steel",
-    "904l ss": "904l stainless steel",
-    "ss316": "316 stainless steel",
-    "ss316l": "316l stainless steel",
-    "ss904l": "904l stainless steel",
-    "pt": "platinum",
-}
-
-def _clean_import_value(value):
-    if value is None:
-        return ""
-    text = str(value).replace("\n", " ").strip()
-    text = re.sub(r"\s+", " ", text)
-    if text.upper() in INVALID_IMPORT_VALUES:
-        return ""
-    return text
-
-def _norm_import_name(value):
-    text = _clean_import_value(value).lower()
-    if not text:
-        return ""
-    text = text.replace("&", " and ")
-    text = re.sub(r"\bphophoric\b|\bphosporic\b", "phosphoric", text)
-    text = re.sub(r"\bstainless\s+steel\b", "ss", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
-    text = re.sub(r"\s+", " ", text)
-    compact = text.replace(" ", "")
-    return IMPORT_ALIASES.get(text, IMPORT_ALIASES.get(compact, compact))
-
-def _canonical_map(values):
-    result = {}
-    for value in values:
-        cleaned = _clean_import_value(value)
-        norm = _norm_import_name(cleaned)
-        if cleaned and norm and norm not in result:
-            result[norm] = cleaned
-    return result
-
-def _canonical_match(value, candidates, threshold=0.90):
-    cleaned = _clean_import_value(value)
-    norm = _norm_import_name(cleaned)
-    if not cleaned or not norm:
-        return "", "empty", 0
-    if norm in candidates:
-        return candidates[norm], "exact", 100
-    best_key, best_score = "", 0
-    for key in candidates:
-        score = SequenceMatcher(None, norm, key).ratio()
-        if score > best_score:
-            best_key, best_score = key, score
-    if best_key and best_score >= threshold:
-        return candidates[best_key], "fuzzy", round(best_score * 100)
-    return cleaned, "new", round(best_score * 100)
-
 def get_existing_materials(wb):
-    existing = {
-        "electrodes": {},
-        "liners": {},
-        "fluids": {},
-        "fluid_materials": {},
-        "projects": set(),
-    }
+    existing = {"electrodes": set(), "liners": set(), "fluids": set(), "fluid_electrodes": {}}
     try:
         if "Electrode Materials" in wb.sheetnames:
             ws = wb["Electrode Materials"]
-            existing["electrodes"] = _canonical_map(row[0] for row in ws.iter_rows(min_row=2, values_only=True) if row and row[0])
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row[0]: existing["electrodes"].add(str(row[0]).strip())
         if "Liner Materials" in wb.sheetnames:
             ws = wb["Liner Materials"]
-            existing["liners"] = _canonical_map(row[0] for row in ws.iter_rows(min_row=2, values_only=True) if row and row[0])
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row[0]: existing["liners"].add(str(row[0]).strip())
         if "Fluid-Material Matrix" in wb.sheetnames:
             ws = wb["Fluid-Material Matrix"]
-            fluid_names = []
             for row in ws.iter_rows(min_row=2, values_only=True):
-                fluid = _clean_import_value(row[0] if row else "")
-                if not fluid:
-                    continue
-                fluid_names.append(fluid)
-                existing["fluid_materials"][_norm_import_name(fluid)] = {
-                    "fluid": fluid,
-                    "type": _clean_import_value(row[1] if len(row) > 1 else ""),
-                    "liner": _clean_import_value(row[4] if len(row) > 4 else ""),
-                    "electrode": _clean_import_value(row[5] if len(row) > 5 else ""),
-                }
-            existing["fluids"] = _canonical_map(fluid_names)
-        if "JESA Project Data" in wb.sheetnames:
-            ws = wb["JESA Project Data"]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row and row[0]:
-                    existing["projects"].add(str(row[0]).strip())
-    except Exception:
+                if row[0]:
+                    existing["fluids"].add(str(row[0]).strip())
+                    if row[1]: existing["fluid_electrodes"][str(row[0]).strip()] = str(row[1]).strip()
+    except:
         pass
     return existing
 
-def normalize_imported_instruments(instruments, existing):
-    normalized = []
-    matched_notes = []
-    for inst in instruments:
-        item = dict(inst)
-        for field, group in [("fluid", "fluids"), ("electrode", "electrodes"), ("liner", "liners")]:
-            original = _clean_import_value(item.get(field))
-            canonical, status, score = _canonical_match(original, existing.get(group, {}))
-            item[f"{field}_original"] = original
-            item[f"{field}_match_status"] = status
-            item[f"{field}_match_score"] = score
-            if status in ("exact", "fuzzy") and canonical:
-                item[field] = canonical
-                if original and original != canonical:
-                    matched_notes.append(f"{field.title()} `{original}` matched existing `{canonical}` for tag {item.get('tag','N/A')}.")
-            else:
-                item[field] = original
-        normalized.append(item)
-    return normalized, matched_notes
-
 def detect_new_materials(instruments, existing):
     new_findings = []
-    seen = set()
-
-    def add_finding(finding):
-        key = (finding.get("type"), _norm_import_name(finding.get("value")), _norm_import_name(finding.get("fluid")), finding.get("tag"))
-        if key not in seen:
-            seen.add(key)
-            new_findings.append(finding)
-
     for inst in instruments:
-        electrode = _clean_import_value(inst.get('electrode'))
-        liner = _clean_import_value(inst.get('liner'))
-        fluid = _clean_import_value(inst.get('fluid'))
+        electrode = str(inst.get('electrode') or '').strip()
+        liner = str(inst.get('liner') or '').strip()
+        fluid = str(inst.get('fluid') or '').strip()
         tag = inst.get('tag', '')
-
-        if electrode and inst.get("electrode_match_status") == "new":
-            add_finding({
-                "type": "electrode",
-                "value": electrode,
-                "tag": tag,
-                "fluid": fluid,
-                "context": f"Found in {tag} for {fluid or 'unknown fluid'}",
-                "reason": "New candidate. Datasheet does not contain the full material specification needed for automatic database insertion.",
-            })
-        if liner and inst.get("liner_match_status") == "new":
-            add_finding({
-                "type": "liner",
-                "value": liner,
-                "tag": tag,
-                "fluid": fluid,
-                "context": f"Found in {tag} for {fluid or 'unknown fluid'}",
-                "reason": "New candidate. Datasheet does not contain all compatibility/rating fields needed for automatic database insertion.",
-            })
-        if fluid and inst.get("fluid_match_status") == "new":
-            add_finding({
-                "type": "fluid",
-                "value": fluid,
-                "tag": tag,
-                "electrode": electrode,
-                "liner": liner,
-                "context": f"New fluid candidate in {tag}",
-                "reason": "Needs engineering review because maintenance plan, CAPEX score, and full material rules are not provided by the datasheet.",
-            })
-        elif fluid:
-            materials = existing.get("fluid_materials", {}).get(_norm_import_name(fluid), {})
-            existing_electrode = materials.get("electrode", "")
-            existing_liner = materials.get("liner", "")
-            if electrode and existing_electrode and _norm_import_name(electrode) != _norm_import_name(existing_electrode):
-                add_finding({
-                    "type": "fluid_electrode_variant",
-                    "value": electrode,
-                    "tag": tag,
-                    "fluid": fluid,
-                    "matched_existing": existing_electrode,
-                    "context": f"Different electrode for {fluid} in {tag} (database: {existing_electrode})",
-                    "reason": "Possible valid project variant. Review before changing the fluid-material matrix.",
-                })
-            if liner and existing_liner and _norm_import_name(liner) != _norm_import_name(existing_liner):
-                add_finding({
-                    "type": "fluid_liner_variant",
-                    "value": liner,
-                    "tag": tag,
-                    "fluid": fluid,
-                    "matched_existing": existing_liner,
-                    "context": f"Different liner for {fluid} in {tag} (database: {existing_liner})",
-                    "reason": "Possible valid project variant. Review before changing the fluid-material matrix.",
-                })
+        if electrode and electrode not in ('VTA', 'N/A', 'null', '') and electrode not in existing["electrodes"]:
+            new_findings.append({"type": "electrode", "value": electrode, "tag": tag, "fluid": fluid, "context": f"Found in {tag} for {fluid}"})
+        if liner and liner not in ('VTA', 'N/A', 'null', '') and liner not in existing["liners"]:
+            new_findings.append({"type": "liner", "value": liner, "tag": tag, "fluid": fluid, "context": f"Found in {tag} for {fluid}"})
+        if fluid and fluid not in ('VTA', 'N/A', 'null', '') and fluid not in existing["fluids"]:
+            new_findings.append({"type": "fluid", "value": fluid, "tag": tag, "electrode": electrode, "liner": liner, "context": f"New fluid in {tag}"})
+        elif fluid in existing["fluid_electrodes"] and electrode and electrode not in ('VTA', 'N/A', 'null', ''):
+            existing_elec = existing["fluid_electrodes"][fluid]
+            if electrode not in existing_elec:
+                new_findings.append({"type": "fluid_electrode_variant", "value": electrode, "tag": tag, "fluid": fluid, "context": f"New electrode variant for {fluid} (current: {existing_elec})"})
     return new_findings
 
-def apply_updates_to_excel(wb, approved_updates, project_name=""):
-    """Append AI discoveries to a review queue instead of corrupting curated DB sheets."""
-    sheet_name = "AI Import Review Queue"
-    if sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-    else:
-        ws = wb.create_sheet(sheet_name)
-        ws.append(["Date", "Project", "Tag", "Item Type", "Extracted Value", "Matched Existing",
-                   "Fluid", "Electrode", "Liner", "Source", "Status", "Reason / Notes"])
-        for cell in ws[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill(start_color="1B2A4A", end_color="1B2A4A", fill_type="solid")
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        widths = [14, 26, 18, 22, 24, 24, 24, 22, 22, 20, 22, 70]
-        for idx, width in enumerate(widths, start=1):
-            ws.column_dimensions[get_column_letter(idx)].width = width
-
-    today = datetime.now().strftime('%Y-%m-%d')
+def apply_updates_to_excel(wb, approved_updates):
     changes = []
     for update in approved_updates:
-        ws.append([
-            today,
-            project_name,
-            update.get("tag", ""),
-            update.get("type", ""),
-            update.get("value", ""),
-            update.get("matched_existing", ""),
-            update.get("fluid", ""),
-            update.get("electrode", ""),
-            update.get("liner", ""),
-            "Project Import PDF",
-            "Needs I&C Review",
-            update.get("reason", update.get("context", "")),
-        ])
-        for cell in ws[ws.max_row]:
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-        changes.append(f"Queued for review: {update.get('type')} — {update.get('value')}")
+        utype = update["type"]
+        value = update["value"]
+        try:
+            if utype == "electrode":
+                ws = wb["Electrode Materials"]
+                ws.cell(row=ws.max_row + 1, column=1, value=value)
+                ws.cell(row=ws.max_row, column=2, value="Auto-imported")
+                ws.cell(row=ws.max_row, column=3, value=datetime.now().strftime('%Y-%m-%d'))
+                changes.append(f"Added electrode: {value}")
+            elif utype == "liner":
+                ws = wb["Liner Materials"]
+                ws.cell(row=ws.max_row + 1, column=1, value=value)
+                ws.cell(row=ws.max_row, column=2, value="Auto-imported")
+                ws.cell(row=ws.max_row, column=3, value=datetime.now().strftime('%Y-%m-%d'))
+                changes.append(f"Added liner: {value}")
+            elif utype == "fluid":
+                ws = wb["Fluid-Material Matrix"]
+                ws.cell(row=ws.max_row + 1, column=1, value=value)
+                ws.cell(row=ws.max_row, column=2, value=update.get("electrode", "VTA"))
+                ws.cell(row=ws.max_row, column=3, value=update.get("liner", "VTA"))
+                changes.append(f"Added fluid: {value}")
+            elif utype == "fluid_electrode_variant":
+                ws = wb["Fluid-Material Matrix"]
+                for row in ws.iter_rows(min_row=2):
+                    if row[0].value and str(row[0].value).strip() == update["fluid"]:
+                        current = str(row[1].value or "")
+                        if value not in current:
+                            row[1].value = current + " / " + value if current else value
+                            changes.append(f"Added electrode variant {value} to {update['fluid']}")
+                        break
+        except Exception as e:
+            changes.append(f"Error: {str(e)}")
     return wb, changes
 
 def save_project_to_gsheet(instruments, project_name):
@@ -1168,85 +887,6 @@ def load_project_data_from_gsheet():
         return ws.get_all_records()
     except:
         return []
-
-def _num_value(value):
-    try:
-        if value is None or value == "":
-            return None
-        return float(str(value).replace(",", ".").replace(">", "").replace("<", "").strip())
-    except Exception:
-        return None
-
-def _project_value(record, *keys):
-    for key in keys:
-        if key in record and record.get(key) not in (None, ""):
-            return record.get(key)
-    return ""
-
-def _standard_project_record(record, source="Internal Excel"):
-    return {
-        "project": _project_value(record, "project", "Project"),
-        "tag": _project_value(record, "tag", "Tag"),
-        "service": _project_value(record, "service", "Service"),
-        "fluid": _project_value(record, "fluid", "Fluid"),
-        "dn": _project_value(record, "dn", "DN"),
-        "flow_normal": _project_value(record, "flow_normal", "Flow Normal"),
-        "flow_max": _project_value(record, "flow_max", "Flow Max"),
-        "temp_design": _project_value(record, "temp_design", "Temp Design"),
-        "pressure_design": _project_value(record, "pressure_design", "Pressure Design"),
-        "electrode": _project_value(record, "electrode", "Electrode"),
-        "liner": _project_value(record, "liner", "Liner"),
-        "vendor": _project_value(record, "vendor", "Vendor"),
-        "model": _project_value(record, "model", "Model"),
-        "import_date": _project_value(record, "Import Date"),
-        "source": source,
-    }
-
-def get_combined_project_records():
-    records = [_standard_project_record(p, "Internal Excel") for p in ai.data.project_data]
-    records.extend(_standard_project_record(p, "Imported Project") for p in load_project_data_from_gsheet())
-    return [r for r in records if r.get("project") or r.get("tag") or r.get("fluid")]
-
-def compare_imported_projects(fluid, selected_materials, reco_meta, limit=5):
-    matches = []
-    imported_records = [_standard_project_record(p, "Imported Project") for p in load_project_data_from_gsheet()]
-    for p in imported_records:
-        score = 0
-        details = []
-        p_fluid = _clean_import_value(p.get("fluid"))
-        if _norm_import_name(p_fluid) and _norm_import_name(p_fluid) == _norm_import_name(fluid):
-            score += 35
-            details.append(("Fluid", f"{p_fluid} matches selected {fluid}"))
-
-        p_electrode = _clean_import_value(p.get("electrode"))
-        if p_electrode and _norm_import_name(p_electrode) == _norm_import_name(getattr(selected_materials, "electrode", "")):
-            score += 18
-            details.append(("Electrode", f"{p_electrode} matches recommendation"))
-
-        p_liner = _clean_import_value(p.get("liner"))
-        if p_liner and _norm_import_name(p_liner) == _norm_import_name(getattr(selected_materials, "liner", "")):
-            score += 18
-            details.append(("Liner", f"{p_liner} matches recommendation"))
-
-        for label, p_key, meta_key, pts in [
-            ("DN", "dn", "dn", 12),
-            ("Normal flow", "flow_normal", "flow_normal", 7),
-            ("Max flow", "flow_max", "flow_max", 5),
-            ("Design temperature", "temp_design", "temp_design", 3),
-            ("Design pressure", "pressure_design", "pressure_design", 2),
-        ]:
-            pv = _num_value(p.get(p_key))
-            mv = _num_value(reco_meta.get(meta_key))
-            if pv is None or mv is None:
-                continue
-            tolerance = max(abs(mv) * 0.15, 1.0)
-            if abs(pv - mv) <= tolerance:
-                score += pts
-                details.append((label, f"{pv:g} close to {mv:g}"))
-
-        if score >= 35:
-            matches.append({"record": p, "confidence": min(score, 100), "details": details})
-    return sorted(matches, key=lambda x: x["confidence"], reverse=True)[:limit]
 
 def generate_maintenance_excel(tag, fluid, cat, mat, vendor_e, vendor_eh, vendor_k, tco, history_records=None, checklist_data=None):
     wb = openpyxl.Workbook()
@@ -1567,23 +1207,23 @@ if "page" not in st.session_state:
 #  LANDING PAGE
 # ------------------------------------------------------------
 def render_landing():
-    logo_html = f"<img class='mf-landing-logo' src='{IMG_JESA_LOGO}' alt='JESA logo'>" if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_") else ""
-    st.markdown(
-        f"""
-        <div class="mf-landing-head">
-          {logo_html}
-          <div>
-            <div class="mf-landing-title">MagFlow <span class="ai">AI</span></div>
-            <div class="mf-landing-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</div>
-            <div class="mf-landing-meta">PFE ENSA — JESA (OCP × Worley) · Instrumentation &amp; Control · 2026</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True)
+    # Top bar: JESA logo + title
+    lc1, lc2 = st.columns([1, 4])
+    with lc1:
+        if IMG_JESA_LOGO and not IMG_JESA_LOGO.startswith("REPLACE_"):
+            st.image(IMG_JESA_LOGO, width=160)
+    with lc2:
+        st.markdown(
+            "<h1 style='color:#1B2A4A;margin-bottom:0'>🔧 MagFlow AI</h1>"
+            "<p style='font-size:18px;color:#1565C0;margin-top:2px;font-weight:600'>"
+            "AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>"
+            "<p style='font-size:13px;color:#888;margin-top:0'>PFE ENSA — JESA (OCP × Worley) · "
+            "Instrumentation & Control · 2026</p>",
+            unsafe_allow_html=True)
 
     # Hero image
     if IMG_HERO and not IMG_HERO.startswith("REPLACE_"):
-        st.markdown(f"<div class='mf-hero'><img src='{IMG_HERO}' alt='JESA industrial hero'></div>",
+        st.markdown(f"<div class='mf-hero'><img src='{IMG_HERO}' style='width:100%;display:block'></div>",
                     unsafe_allow_html=True)
     else:
         st.info("🖼️ Hero image goes here — set `IMG_HERO` at the top of app.py (see chat for how to get the URL).")
@@ -1597,17 +1237,19 @@ def render_landing():
             st.session_state.page = "app"
             st.rerun()
 
+    st.divider()
+
     # What it is / what it does
-    st.markdown("<div class='mf-home-title'>What is MagFlow AI?</div>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#1B2A4A'>What is MagFlow AI?</h2>", unsafe_allow_html=True)
     st.markdown(
-        "<p class='mf-home-copy'>MagFlow AI is an AI-based predictive-maintenance assistant "
+        "<p style='font-size:16px;color:#444'>MagFlow AI is an AI-based predictive-maintenance assistant "
         "<b>developed and validated on electromagnetic flowmeters, with a generic and extensible architecture</b>. "
         "It turns a flowmeter's process conditions into a complete engineering recommendation: the right materials, "
         "compatible vendor models, total cost of ownership, drift risk, and a year-round maintenance plan — "
         "grounded in a database of real JESA/OCP projects.</p>",
         unsafe_allow_html=True)
 
-    st.markdown("<div class='mf-home-subtitle'>What it does</div>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color:#1565C0'>What it does</h3>", unsafe_allow_html=True)
     f1, f2, f3, f4 = st.columns(4)
     for col, (icon, title, body, color) in zip(
         [f1, f2, f3, f4],
@@ -1625,7 +1267,7 @@ def render_landing():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Magnetic flowmeter — photo + description
-    st.markdown("<div class='mf-home-subtitle'>The magnetic flowmeter</div>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color:#1565C0'>The magnetic flowmeter</h3>", unsafe_allow_html=True)
     pc1, pc2 = st.columns([2, 3])
     with pc1:
         if IMG_FLOWMETER and not IMG_FLOWMETER.startswith("REPLACE_"):
@@ -1648,7 +1290,7 @@ def render_landing():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # How to use it (first-time user steps)
-    st.markdown("<div class='mf-home-title'>How to use it</div>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#1B2A4A'>How to use it</h2>", unsafe_allow_html=True)
     steps = [
         ("1 · Enter process data", "Open the <b>Recommendation Engine</b>, then fill the fluid, pipe, operating conditions and any special notes."),
         ("2 · Run the engine", "Click <b>Run Recommendation</b>. You'll get all four layers: validation, materials, vendors, and TCO & drift."),
@@ -1742,25 +1384,25 @@ with st.sidebar:
 # ============================================================
 #  APP HEADER + TABS  (Dashboard moved to LAST)
 # ============================================================
-st.markdown("""
-<div class="mf-app-hero">
-  <div class="mf-hero-inner">
-    <div class="mf-wave-logo"></div>
-    <div>
-      <div class="mf-app-title">MagFlow <span class="ai">AI</span></div>
-      <p class="mf-app-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
-      <p class="mf-app-meta">PFE ENSA — JESA (OCP × Worley) &nbsp; | &nbsp; Instrumentation &amp; Control &nbsp; | &nbsp; Developed by Maroua Hakkak — 2026</p>
-    </div>
-  </div>
- </div>
-""", unsafe_allow_html=True)
 st.markdown('<div class="mf-home-row">', unsafe_allow_html=True)
-_home_gap, _home_btn, _home_gap2 = st.columns([4.5, 1.2, 4.5])
-with _home_btn:
+_home_spacer, _home_col = st.columns([8, 1])
+with _home_col:
     if st.button("🏠 Home", key="top_home_modern", use_container_width=True):
         st.session_state.page = "home"
         st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("""
+<div class="mf-app-hero">
+  <div class="mf-hero-inner">
+    <div class="mf-title-stack">
+      <div class="mf-app-title">MagFlow <span class="ai">AI</span></div>
+      <p class="mf-app-sub">AI-Based Predictive Maintenance System for Electromagnetic Flowmeters</p>
+      <p class="mf-app-meta">PFE ENSA — JESA (OCP × Worley) | Instrumentation &amp; Control | 2026</p>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # New order: Recommendation Engine → Maintenance History → Project Import → Dashboard
 mt_reco, mt_hist, mt_import, mt_dash = st.tabs(
@@ -1880,13 +1522,8 @@ with mt_hist:
 # ------------------------------------------------------------
 with mt_dash:
     st.header("📊 JESA Project Analytics")
-    project_data_all = get_combined_project_records()
-    imported_count = sum(1 for p in project_data_all if p.get("source") == "Imported Project")
-    internal_count = sum(1 for p in project_data_all if p.get("source") == "Internal Excel")
-    if imported_count:
-        st.caption(f"Showing **{len(project_data_all)}** project instrument records: **{internal_count}** internal Excel + **{imported_count}** imported from Project Import.")
     pc = {}
-    for p in project_data_all:
+    for p in ai.data.project_data:
         pn = p.get('project','')
         if pn and not any(k in pn for k in ['LEGEND','NOTE','Original','UPDATED']): pc[pn]=pc.get(pn,0)+1
     for pn,c in sorted(pc.items(), key=lambda x:-x[1]):
@@ -1895,7 +1532,7 @@ with mt_dash:
     with d1:
         st.subheader("Electrodes")
         ec = {}
-        for p in project_data_all:
+        for p in ai.data.project_data:
             e = p.get('electrode','').strip()
             if e and e!='N/A': ec[e]=ec.get(e,0)+1
         for en,c in sorted(ec.items(),key=lambda x:-x[1])[:10]:
@@ -1903,7 +1540,7 @@ with mt_dash:
     with d2:
         st.subheader("Liners")
         lc = {}
-        for p in project_data_all:
+        for p in ai.data.project_data:
             l = p.get('liner','').strip()
             if l and l!='N/A': lc[l]=lc.get(l,0)+1
         for ln,c in sorted(lc.items(),key=lambda x:-x[1])[:10]:
@@ -1914,7 +1551,7 @@ with mt_dash:
     with s3: st.metric("Liners", len(ai.data.liners))
     with s4: st.metric("Models", len(ai.data.vendor_models))
     with s5: st.metric("Drift", len(ai.data.drift_indicators))
-    with s6: st.metric("Projects", len(project_data_all), delta=f"+{imported_count} imported" if imported_count else None)
+    with s6: st.metric("Projects", len(ai.data.project_data))
 
 # ------------------------------------------------------------
 #  RECOMMENDATION ENGINE
@@ -1977,11 +1614,6 @@ with mt_reco:
         st.session_state["reco_meta"] = {
             "fluid": fluid, "cat": cat,
             "tag": tag_number if tag_number else "NEW-INSTRUMENT",
-            "dn": dn,
-            "flow_normal": flow_normal,
-            "flow_max": flow_max,
-            "temp_design": t_des,
-            "pressure_design": p_des,
         }
 
     # ---- Render results from session_state (survives any re-run) ----
@@ -2118,22 +1750,6 @@ with mt_reco:
                 total = len(tco.validation); matches = sum(1 for mt in tco.validation if mt.confidence>=80)
                 st.caption(f"{matches}/{total} matches. {'Validated ✓' if matches>total/2 else 'Review ⚠'}")
             else: st.info("No matching project.")
-            imported_matches = compare_imported_projects(fluid, m, meta)
-            if imported_matches:
-                st.markdown("<p style='font-size:16px;font-weight:bold'>📂 Matches from Imported Projects</p>", unsafe_allow_html=True)
-                for im in imported_matches:
-                    rec = im["record"]
-                    title = f"📂 IMPORTED MATCH — {rec.get('project','Imported project')} | {rec.get('tag','N/A')} ({rec.get('fluid','')}) — {im['confidence']}%"
-                    with st.expander(title):
-                        st.markdown(f"**Source:** {rec.get('source','Imported Project')}")
-                        st.markdown(f"**Tag:** {rec.get('tag','')}")
-                        st.markdown(f"**Fluid:** {rec.get('fluid','')}")
-                        st.markdown(f"**DN / Flow:** DN{rec.get('dn','')} | {rec.get('flow_normal','')} → {rec.get('flow_max','')} m³/h")
-                        st.markdown(f"**Design T/P:** {rec.get('temp_design','')} °C | {rec.get('pressure_design','')} bar")
-                        st.markdown(f"**Materials:** {rec.get('electrode','')} / {rec.get('liner','')}")
-                        st.markdown("**Why it matched:**")
-                        for label, detail in im["details"]:
-                            st.markdown(f"- **{label}:** {detail}")
             if tco.notes_response:
                 st.markdown("<p style='font-size:18px;font-weight:bold'>💡 AI Response</p>", unsafe_allow_html=True)
                 st.markdown(tco.notes_response)
@@ -2145,7 +1761,7 @@ with mt_reco:
 # ------------------------------------------------------------
 with mt_import:
     st.header("📂 Project Import — Datasheet Analyzer")
-    st.markdown("Upload a JESA flowmeter datasheet PDF. The AI extracts project instruments, recognizes existing fluids/materials even with spelling variants, and sends incomplete new database items to engineering review.")
+    st.markdown("Upload a JESA flowmeter datasheet PDF. The AI extracts all instrument data, **detects new materials**, and updates the database automatically.")
     col_upload, col_db = st.columns([1, 1])
     with col_upload:
         st.subheader("📤 Upload Datasheet PDF")
@@ -2153,7 +1769,7 @@ with mt_import:
         uploaded_pdf = st.file_uploader("Upload JESA Datasheet PDF", type=["pdf"], key="pdf_import")
         if uploaded_pdf:
             st.success(f"✅ **{uploaded_pdf.name}** ready")
-            if st.button("🤖 Analyze & Check Database", type="primary", use_container_width=True):
+            if st.button("🤖 Analyze & Detect New Materials", type="primary", use_container_width=True):
                 with st.spinner("Step 1/3 — AI reading datasheet..."):
                     pdf_bytes = uploaded_pdf.read()
                     instruments, error = extract_datasheet_with_ai(pdf_bytes)
@@ -2165,35 +1781,26 @@ with mt_import:
                     if err:
                         st.error(f"❌ Cannot load database: {err}")
                     else:
-                        with st.spinner("Step 3/3 — Matching names and detecting review items..."):
+                        with st.spinner("Step 3/3 — Detecting new materials..."):
                             existing = get_existing_materials(wb)
-                            instruments, matched_notes = normalize_imported_instruments(instruments, existing)
                             new_findings = detect_new_materials(instruments, existing)
                         st.session_state['import_instruments'] = instruments
                         st.session_state['import_wb'] = wb
                         st.session_state['import_sha'] = sha
                         st.session_state['import_new'] = new_findings
-                        st.session_state['import_matches'] = matched_notes
                         st.session_state['import_project'] = project_name_override or (instruments[0].get('project','') if instruments else '')
-                        st.success(f"✅ Found **{len(instruments)}** instrument(s) — **{len(new_findings)}** item(s) need review")
+                        st.success(f"✅ Found **{len(instruments)}** instrument(s) — **{len(new_findings)}** new material(s) detected")
         if 'import_instruments' in st.session_state:
             instruments = st.session_state['import_instruments']
             new_findings = st.session_state['import_new']
-            matched_notes = st.session_state.get('import_matches', [])
             pname = st.session_state['import_project']
             st.divider()
             st.subheader("📋 Extracted Instruments")
-            if matched_notes:
-                with st.expander("✅ Existing database matches / aliases recognized", expanded=False):
-                    for note in matched_notes:
-                        st.markdown(f"- {note}")
             for inst in instruments:
                 with st.expander(f"🔧 {inst.get('tag','N/A')} — {inst.get('fluid','N/A')}"):
                     c1, c2 = st.columns(2)
                     with c1:
                         st.markdown(f"**Project:** {inst.get('project', pname)}"); st.markdown(f"**Fluid:** {inst.get('fluid','')}")
-                        if inst.get('fluid_original') and inst.get('fluid_original') != inst.get('fluid'):
-                            st.caption(f"PDF value: {inst.get('fluid_original')} → database value: {inst.get('fluid')}")
                         st.markdown(f"**DN:** {inst.get('dn','')} mm"); st.markdown(f"**Flow:** {inst.get('flow_normal','')} → {inst.get('flow_max','')} m³/h")
                         st.markdown(f"**Temp design:** {inst.get('temp_design','')} °C"); st.markdown(f"**Pressure design:** {inst.get('pressure_design','')} bar-g")
                     with c2:
@@ -2202,19 +1809,17 @@ with mt_import:
                         st.markdown(f"**Accuracy:** {inst.get('accuracy','')}"); st.markdown(f"**Vendor/Model:** {inst.get('vendor','')} / {inst.get('model','')}")
             if new_findings:
                 st.divider()
-                st.subheader("🧾 Database Review Items")
-                st.warning(f"**{len(new_findings)} item(s)** need I&C review before entering the curated database:")
+                st.subheader("🆕 New Materials Detected")
+                st.warning(f"**{len(new_findings)} new item(s)** not in current database:")
                 approved = []
                 for i, finding in enumerate(new_findings):
-                    icons = {"electrode": "⚡", "liner": "🟡", "fluid": "💧", "fluid_electrode_variant": "🔀", "fluid_liner_variant": "🔀"}
-                    labels = {"electrode": "New Electrode", "liner": "New Liner", "fluid": "New Fluid", "fluid_electrode_variant": "Electrode Variant", "fluid_liner_variant": "Liner Variant"}
+                    icons = {"electrode": "⚡", "liner": "🟡", "fluid": "💧", "fluid_electrode_variant": "🔀"}
+                    labels = {"electrode": "New Electrode", "liner": "New Liner", "fluid": "New Fluid", "fluid_electrode_variant": "New Electrode Variant"}
                     checked = st.checkbox(f"{icons.get(finding['type'],'🆕')} **{labels.get(finding['type'],'New')}:** `{finding['value']}` — {finding['context']}", value=True, key=f"approve_{i}")
-                    st.caption(finding.get("reason", "Needs review before database insertion."))
-                    if checked:
-                        approved.append(finding)
+                    if checked: approved.append(finding)
                 st.session_state['import_approved'] = approved
             else:
-                st.info("✅ No new database review items detected. Existing spelling variants were matched to the current database.")
+                st.info("✅ No new materials detected.")
                 st.session_state['import_approved'] = []
             st.divider()
             col_save1, col_save2 = st.columns(2)
@@ -2227,19 +1832,10 @@ with mt_import:
             with col_save2:
                 approved_updates = st.session_state.get('import_approved', [])
                 if approved_updates:
-                    st.info(f"💡 **{len(approved_updates)} selected item(s)** will be saved to `AI Import Review Queue`, not directly into the curated material tables. This avoids adding incomplete records when the PDF does not contain maintenance plan, CAPEX score, or full compatibility rules.")
-                    if st.button("📌 Send Selected Items to Review Queue", use_container_width=True):
-                        with st.spinner("Updating Data_Collection_v2.xlsx review queue on GitHub..."):
-                            wb = st.session_state.get('import_wb')
-                            sha = st.session_state.get('import_sha')
-                            wb, changes = apply_updates_to_excel(wb, approved_updates, pname)
-                            ok, err = push_excel_to_github(wb, sha, f"Add AI import review items for {pname or 'project'}")
-                        if err:
-                            st.error(f"❌ {err}")
-                        else:
-                            st.success(f"✅ {len(changes)} item(s) queued for I&C review.")
-                            for change in changes:
-                                st.markdown(f"- {change}")
+                    st.info(f"💡 **{len(approved_updates)} new material(s) detected**\n\nThese materials have been flagged for review. To integrate them into the database, an I&C engineer must complete their full specification (liner, o-ring, grounding, conductivity limits) in Data_Collection_v2.xlsx before adding them.")
+                    for finding in approved_updates:
+                        icons = {"electrode": "⚡", "liner": "🟡", "fluid": "💧", "fluid_electrode_variant": "🔀"}
+                        st.markdown(f"{icons.get(finding['type'],'🆕')} **{finding['value']}** — {finding['context']}")
                 else:
                     st.success("✅ All materials already in database.")
     with col_db:
