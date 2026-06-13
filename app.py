@@ -2094,8 +2094,14 @@ with mt_reco:
                 ("Multi-Year (3-5yr)",mnt.multi_year,"📊","#FFF9C4","#F57F17"),
                 ("Component Lifespan",mnt.replacement,"♻️","#FFCDD2","#C62828")]:
                 if items:
-                    st.markdown(f"<div style='background:{bg};padding:12px 15px;border-radius:8px;border-left:4px solid {tc2};margin:8px 0'><p style='font-size:16px;font-weight:bold;color:{tc2};margin:0'>{icon} {title}</p></div>", unsafe_allow_html=True)
-                    for item in items: st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}")
+                    with st.expander(f"{icon} {title} ({len(items)} task{'s' if len(items) != 1 else ''})"):
+                        st.markdown(
+                            f"<div style='background:{bg};padding:10px 14px;border-radius:8px;"
+                            f"border-left:4px solid {tc2};margin:0 0 10px 0'>"
+                            f"<p style='font-size:15px;font-weight:bold;color:{tc2};margin:0'>{icon} {title}</p></div>",
+                            unsafe_allow_html=True)
+                        for item in items:
+                            st.markdown(f"- {item}")
             st.markdown("---")
 
             tag = meta["tag"]
