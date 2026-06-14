@@ -10,6 +10,7 @@ import io
 import json
 import html
 import re
+from types import SimpleNamespace
 from difflib import SequenceMatcher
 import gspread
 from google.oauth2.service_account import Credentials
@@ -1209,6 +1210,105 @@ def get_combined_project_records():
     records.extend(_standard_project_record(p, "Imported Project") for p in load_project_data_from_gsheet())
     return [r for r in records if r.get("project") or r.get("tag") or r.get("fluid")]
 
+def _legacy_validation_mat_match(needle, haystack):
+    n, h = str(needle or "").lower().strip(), str(haystack or "").lower()
+    if not n or not h:
+        return False
+    if n in h:
+        return True
+    if _legacy_is_ss316_family(n) and _legacy_is_ss316_family(h):
+        return True
+    aliases = {
+        'monel 400':['monel'], 'monel':['monel 400'],
+        'hastelloy c-4':['hastelloy c4','hast c-4'],
+        'hastelloy c-276':['c-276','c276'],
+        'hastelloy c':['hastelloy'],
+        'alloy c22':['c22','alloy c-22'],
+        'conductive rubber':['conductive'],
+        'platinum':['platinum','pt-ir','pt/ir','80%pt'],
+        'platinum / pt-ir':['platinum'],
+        'soft rubber':['soft rubber','natural rubber'],
+        'hard rubber':['hard rubber','ebonite'],
+        'pfa':['pfa'], 'ptfe':['ptfe'], 'neoprene':['neoprene'],
+        'linatex':['linatex'], 'ceramic':['ceramic','al2o3'],
+        'polyurethane':['polyurethane','pu'],
+        '316l':['316l','316'], 'tantalum':['tantalum'],
+        'titanium':['titanium'], 'tungsten carbide':['tungsten'],
+        '316 ti':['316 ti','316ti'],
+    }
+    for alias in aliases.get(n, []) + [n]:
+        if alias in h:
+            return True
+    return False
+
+def _legacy_is_ss316_family(value):
+    text = str(value or '').lower()
+    compact = re.sub(r'[^a-z0-9]+', '', text)
+    if '304' in compact or '316ti' in compact:
+        return False
+    has_316 = '316l' in compact or '316' in compact
+    has_stainless_marker = 'ss' in compact or 'stainless' in text or compact in ['316', '316l']
+    return has_316 and has_stainless_marker
+
+def _legacy_validation_cost(mat):
+    cost_map = {1:'Very Low', 2:'Low', 3:'Medium', 4:'High', 5:'Very High', 6:'Extremely High'}
+    for name, score in ai.data.capex_scores.items():
+        if _legacy_validation_mat_match(mat, name):
+            return cost_map.get(score, '?')
+    return '?'
+
+def legacy_jesa_project_validation(fluid_name, materials, tube_material="SS 316L"):
+    matches = []
+    fn = str(fluid_name or "").lower()
+    for project in ai.data.project_data:
+        pf = str(project.get('fluid', '') or '').lower()
+        if not fn or not pf or not (fn in pf or pf in fn):
+            continue
+
+        details = {}
+        confidence = 100
+        explanation = ""
+        cost_impact = ""
+        project_electrode = project.get('electrode', '')
+        project_liner = project.get('liner', '')
+        project_tube = project.get('tube', '')
+
+        if _legacy_validation_mat_match(getattr(materials, "electrode", ""), project_electrode):
+            details['Electrode'] = f"{project_electrode} ✓"
+        elif project_electrode:
+            details['Electrode'] = f"Project: {project_electrode} | Model: {getattr(materials, 'electrode', '')}"
+            confidence -= 20
+            c1 = _legacy_validation_cost(project_electrode)
+            c2 = _legacy_validation_cost(getattr(materials, "electrode", ""))
+            explanation = f"Project used {project_electrode} ({c1}), model recommends {getattr(materials, 'electrode', '')} ({c2})."
+            cost_impact = f"{project_electrode} ({c1}) vs {getattr(materials, 'electrode', '')} ({c2})"
+
+        if _legacy_validation_mat_match(getattr(materials, "liner", ""), project_liner):
+            details['Liner'] = f"{project_liner} ✓"
+        elif project_liner:
+            details['Liner'] = f"Project: {project_liner} | Model: {getattr(materials, 'liner', '')}"
+            confidence -= 10
+
+        if project_tube and project_tube != 'N/A':
+            if _legacy_validation_mat_match(tube_material, project_tube):
+                details['Tube'] = f"{project_tube} ✓"
+            else:
+                details['Tube'] = f"Project: {project_tube} | Selected: {tube_material}"
+                confidence -= 5
+
+        match_type = '✓ MATCH' if confidence >= 80 else ('⚠ PARTIAL' if confidence >= 50 else '✗ DIFFERS')
+        matches.append(SimpleNamespace(
+            project=project.get('project', ''),
+            fluid=project.get('fluid', ''),
+            match_type=match_type,
+            confidence=max(confidence, 0),
+            details=details,
+            explanation=explanation,
+            cost_impact=cost_impact,
+        ))
+    matches.sort(key=lambda item: -item.confidence)
+    return matches[:8]
+
 def compare_imported_projects(fluid, selected_materials, reco_meta, limit=5):
     matches = []
     imported_records = [_standard_project_record(p, "Imported Project") for p in load_project_data_from_gsheet()]
@@ -2117,6 +2217,7 @@ with mt_reco:
                        "with a Work done column for monthly & quarterly tasks), and Historical Data.")
 
             st.markdown("<p style='font-size:18px;font-weight:bold'>🔍 Validation vs JESA Projects</p>", unsafe_allow_html=True)
+            tco.validation = legacy_jesa_project_validation(fluid, m, meta.get("tube_material", "SS 316L"))
             if tco.validation:
                 for match in tco.validation:
                     ic = "✅" if "MATCH" in match.match_type else ("⚠️" if "PARTIAL" in match.match_type else "❌")
@@ -2127,22 +2228,6 @@ with mt_reco:
                 total = len(tco.validation); matches = sum(1 for mt in tco.validation if mt.confidence>=80)
                 st.caption(f"{matches}/{total} matches. {'Validated ✓' if matches>total/2 else 'Review ⚠'}")
             else: st.info("No matching project.")
-            imported_matches = compare_imported_projects(fluid, m, meta)
-            if imported_matches:
-                st.markdown("<p style='font-size:16px;font-weight:bold'>📂 Matches from Imported Projects</p>", unsafe_allow_html=True)
-                for im in imported_matches:
-                    rec = im["record"]
-                    title = f"📂 IMPORTED MATCH — {rec.get('project','Imported project')} | {rec.get('tag','N/A')} ({rec.get('fluid','')}) — {im['confidence']}%"
-                    with st.expander(title):
-                        st.markdown(f"**Source:** {rec.get('source','Imported Project')}")
-                        st.markdown(f"**Tag:** {rec.get('tag','')}")
-                        st.markdown(f"**Fluid:** {rec.get('fluid','')}")
-                        st.markdown(f"**DN / Flow:** DN{rec.get('dn','')} | {rec.get('flow_normal','')} → {rec.get('flow_max','')} m³/h")
-                        st.markdown(f"**Design T/P:** {rec.get('temp_design','')} °C | {rec.get('pressure_design','')} bar")
-                        st.markdown(f"**Materials:** {rec.get('electrode','')} / {rec.get('liner','')}")
-                        st.markdown("**Why it matched:**")
-                        for label, detail in im["details"]:
-                            st.markdown(f"- **{label}:** {detail}")
             if tco.notes_response:
                 st.markdown("<p style='font-size:18px;font-weight:bold'>💡 AI Response</p>", unsafe_allow_html=True)
                 st.markdown(tco.notes_response)
